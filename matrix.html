@@ -157,9 +157,17 @@
     .crumb .seg:hover { background: #263a60; color: #fff; }
     .crumb .seg.now { cursor: default; color: #cbeeff; background: rgba(74,224,255,0.10); border-color: rgba(74,224,255,0.45); }
     .crumb .sp { color: #45557a; }
+    /* 播放按钮行与参数条：格子（.cell）与模板条目（.tcard / .dspview）共用同一套，
+       结构也照格子来 —— 标题 → 管道 → 画布 → 参数条+播放按钮，画面 y 对齐 */
+    .prow { display: flex; justify-content: flex-end; gap: 4px; margin-top: 3px; }
+    .prow button { flex: none; min-width: 22px; height: 18px; padding: 0 5px; background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; font-size: 11px; line-height: 1; cursor: pointer; }
+    .prow button:hover { background: #263a60; color: #fff; }
+    .foot { margin-top: auto; }          /* 参数条 + 播放按钮贴底，各卡画布位置一致 */
+    .tcard.paused canvas.mx, .dspview.paused canvas.mx { opacity: 0.55; }
+    .tcard.paused .ttitle { color: #7d8db3; }
     /* dsplistview：templates/ 目录的列表视图，一格一个模板文件，小画布即取即看 */
     .dsplist { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
-    .dsplist .tcard { box-sizing: border-box; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 6px 8px 8px; cursor: pointer; }
+    .dsplist .tcard { box-sizing: border-box; display: flex; flex-direction: column; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 6px 8px 8px; cursor: pointer; }
     .dsplist .tcard:hover { border-color: rgba(74,224,255,0.45); }
     .dsplist .tcard.sel { border-color: #4ae0ff; box-shadow: 0 0 0 1px rgba(74,224,255,0.45); }
     /* 三块视图互斥：[hidden] 只靠 UA 样式挡不住 .grid/.dsplist 自己的 display，这里显式压掉 */
@@ -381,26 +389,31 @@
             view: emptyView(),
         };
     }
-    // 视图状态独立于内容：暂停名单 + 每格的画面快照（base64 PNG）+ 右栏开着哪些标签。
-    // 放在根上而不是每格里 —— 只读的原始输入格也归它管，而且它跟标题/级联这种"内容"不是一回事。
-    // openedTabs 目前最多一个（右栏是单标签），先按数组存，将来要开多标签不用改存档格式。
+    // 视图状态独立于内容：暂停名单 + 每块画布的画面快照（base64 PNG）+ 右栏开着哪些标签。
+    // 放在根上而不是每格里 —— 只读的原始输入格与模板条目也归它管，而且它跟标题/级联这种"内容"不是一回事。
+    // 暂停/快照的 key 有两种：格子 id（input / c1… / uN）与模板文件路径（templates/x.json），
+    // 模板条目也能暂停、也存快照，所以两种 key 都要在清洗时留下。
+    // 模板清单是异步拉的，清洗那一刻 TPLS 可能还是空的 → 只能按形态认：templates/ 下、单层、.json 结尾。
+    const TPL_FILE_RE = /^templates\/[^/]+\.json$/;
+    function isTplFileKey(k) { return typeof k === 'string' && TPL_FILE_RE.test(k); }
     function emptyView() { return { paused: [], shots: {}, openedTabs: [] }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
         const set = new Set(ids);
+        const known = (k) => set.has(k) || isTplFileKey(k);
         if (Array.isArray(raw.paused)) {
-            v.paused = raw.paused.filter((id) => set.has(id)).slice(0, 64);
+            v.paused = raw.paused.filter(known).slice(0, 64);
         }
         if (Array.isArray(raw.openedTabs)) {
             const seen = new Set();
             v.openedTabs = raw.openedTabs.filter((id) => set.has(id) && !seen.has(id) && seen.add(id)).slice(0, 8);
         }
         if (raw.shots && typeof raw.shots === 'object') {
-            for (const [id, url] of Object.entries(raw.shots)) {
-                // 只收本项目认得的 id + 像 dataURL 的字符串；超长的直接丢，别让存档膨胀
-                if (set.has(id) && typeof url === 'string' && url.startsWith('data:image/png') && url.length <= MAX_SHOT) {
-                    v.shots[id] = url;
+            for (const [k, url] of Object.entries(raw.shots)) {
+                // 只收本项目认得的 key + 像 dataURL 的字符串；超长的直接丢，别让存档膨胀
+                if (known(k) && typeof url === 'string' && url.startsWith('data:image/png') && url.length <= MAX_SHOT) {
+                    v.shots[k] = url;
                 }
             }
         }
@@ -993,6 +1006,7 @@
         else setGridVisible(true);
         renderCrumb();
         syncTreeFiles();
+        syncGlobalPlay();        // 换视图 = 换了一批可暂停的画布，全局按钮文案要重算
     }
     // 视图自建的画布要跟着视图一起消失：主循环只认 charts 一张表，不摘就会一直空算
     function clearViewCharts() {
@@ -1029,6 +1043,38 @@
         seg('templates/', TPL_DIR_FILE, OPEN.viewer === 'dsplistview', '模板目录的列表视图');
         if (OPEN.viewer === 'dspview') { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
     }
+    // 模板条目的"底部一条"= 参数条 + 播放按钮（与矩阵格子完全同构：画面在上、控件在下）。
+    // 参数只改内存里这一条链的预览值，不落盘 —— 模板是磁盘上的只读文件，要固化就「从模板新建」。
+    function buildTplFoot(host, t, ch) {
+        const foot = document.createElement('div'); foot.className = 'foot';
+        const pbar = document.createElement('div'); pbar.className = 'pbar';
+        pbar.title = '调的是内存里的预览参数，不写回 templates/ 里的文件';
+        // 参数条上的点击不该冒泡成"打开这条"（卡片整体可点 = 打开链路视图）
+        pbar.addEventListener('click', (ev) => ev.stopPropagation());
+        const prow = document.createElement('div'); prow.className = 'prow';
+        const playBtn = document.createElement('button');
+        playBtn.type = 'button'; playBtn.className = 'pb';
+        playBtn.addEventListener('click', (ev) => { ev.stopPropagation(); setPaused(t.file, !isPaused(t.file)); });
+        const rstBtn = document.createElement('button');
+        rstBtn.type = 'button'; rstBtn.className = 'pb'; rstBtn.textContent = '↺';
+        rstBtn.title = '把调过的参数还原成文件里写的那些';
+        rstBtn.addEventListener('click', (ev) => { ev.stopPropagation(); resetTplParams(t); });
+        prow.append(playBtn, rstBtn);
+        foot.append(pbar, prow);
+        host.appendChild(foot);
+        ch.pbar = pbar; ch.playBtn = playBtn;
+        buildParams(pbar, chartParamSpecs(ch), () => { ch.pipeEl.textContent = pipeSummary(ch); });
+        renderPlayBtn(ch);
+        return foot;
+    }
+    // 丢掉内存里改过的那份 stages，下一次 tplStages 会重新按文件内容建一份
+    function resetTplParams(t) { delete t._stages; renderCenter(); }
+    // 视图重建出来的画布要接回存档里的暂停状态：置 paused（主循环跳过）+ 把快照画回位图
+    function bindViewPause(ch) {
+        ch.paused = isPaused(keyOf(ch));
+        if (ch.paused) paintShot(ch);
+        renderPlayBtn(ch);
+    }
     // dsplistview：templates/ 目录的列表。一格 = 一个模板文件，小画布用实时数据跑同一条链
     function renderList() {
         listEl.hidden = false;
@@ -1049,20 +1095,23 @@
             const cv = document.createElement('canvas'); cv.className = 'mx';
             const ds = document.createElement('div'); ds.className = 'tdesc';
             ds.textContent = t.desc || '（无说明）';
-            card.append(nf, tt, pp, cv, ds);
+            card.append(nf, tt, pp, cv);
             card.title = '打开 ' + t.file;
             card.addEventListener('click', () => open({ file: t.file }));
             listEl.appendChild(card);
             const ch = {
-                stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
-                cv, ctx: cv.getContext('2d'), isView: true,
+                file: t.file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
+                cv, ctx: cv.getContext('2d'), pipeEl: pp, card, isView: true,
             };
+            buildTplFoot(card, t, ch);
+            card.appendChild(ds);
             ch.w = fitCanvas(cv, LIST_C_H);
+            bindViewPause(ch);
             charts.push(ch); viewCharts.push(ch);
         }
     }
-    // dspview：单个模板文件的预览视图 —— 大画布 + 逐级算子 + 两个入口按钮。
-    // 只读（模板是磁盘上的文件，不进 DOC）：要改就「从模板新建」克隆一份进「我的图」。
+    // dspview：单个模板文件的预览视图 —— 大画布 + 参数条/播放按钮 + 逐级算子 + 三个入口按钮。
+    // 只读（模板是磁盘上的文件，不进 DOC）：要固化就「从模板新建」克隆一份进「我的图」。
     async function renderOne(file) {
         oneEl.hidden = false;
         oneEl.textContent = '';
@@ -1096,15 +1145,18 @@
             tools.appendChild(b);
             return b;
         };
-        mk('从模板新建', '把这份模板克隆成一份可编辑的「我的图」，并回到矩阵', () => newFromStagesFile(t));
+        mk('从模板新建', '按当前这份（含你调过的参数）克隆一份可编辑的「我的图」，并回到矩阵', () => newFromStagesFile(t));
         mk('← 模板列表', '回到 templates/ 的列表视图', () => open({ file: TPL_DIR_FILE }));
         mk('✕ 回到矩阵', '关掉视图，回到整张图表矩阵', () => open({ file: '' }));
-        oneEl.append(nf, vh, vd, pp, cv, stbox, tools);
         const ch = {
-            stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
-            cv, ctx: cv.getContext('2d'), isView: true,
+            file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
+            cv, ctx: cv.getContext('2d'), pipeEl: pp, card: oneEl, isView: true,
         };
+        oneEl.append(nf, vh, vd, pp, cv);
+        buildTplFoot(oneEl, t, ch);       // 参数条 + 播放/还原：与列表卡片、矩阵格子同一套
+        oneEl.append(stbox, tools);
         ch.w = fitCanvas(cv, ONE_C_H);
+        bindViewPause(ch);
         charts.push(ch); viewCharts.push(ch);
     }
     // 模板的 stages 过一遍 sanitizeStages 再进管道：磁盘文件是手写的，非法 id / 越界参数在这里纠正
@@ -1259,23 +1311,30 @@
     function cellOf(id) { return cellCharts.find((c) => c.entry && c.entry.id === id) || null; }
     // ---------- 播放控制：暂停 = 冻结画面（停止 compute+draw，画布保持最后一帧） ----------
     // 暂停那一刻把画布存成 base64 PNG 写进 DOC.view.shots，并顺手存一次盘（不提交任何草稿）。
-    // 载入时按 DOC.view 还原：暂停的格子不再参与绘制，并把存档里的快照画回画布（尺寸变化后也重画）。
-    function isPaused(id) { return !!id && !!(DOC.view && DOC.view.paused.includes(id)); }
+    // 载入时按 DOC.view 还原：暂停的画布不再参与绘制，并把存档里的快照画回画布（尺寸变化后也重画）。
+    // 暂停的粒度是"一块画布的身份 key"：格子的 key = entry.id，模板条目的 key = 文件路径。
+    // 两者共用同一份 view.paused / view.shots —— 模板条目也要能暂停，与格子没有区别。
+    function keyOf(ch) { return ch.file || (ch.entry && ch.entry.id) || ''; }
+    function isPaused(key) { return !!key && !!(DOC.view && DOC.view.paused.includes(key)); }
     function viewOf() { if (!DOC.view) DOC.view = emptyView(); return DOC.view; }
-    function chartsOfId(id) {
+    function chartsOfKey(key) {
         const out = [];
-        for (const ch of charts) if (ch.entry && ch.entry.id === id) out.push(ch);
-        return out;                                  // 含右栏输出图（它在选中时与该格同源）
+        if (!key) return out;
+        for (const ch of charts) if (keyOf(ch) === key) out.push(ch);
+        return out;                                  // 同一 key 可能有两块画布（列表小图 + 单文件大图）
     }
     function captureShot(ch) {
+        const k = keyOf(ch);
+        if (!k) return false;
         try {
             const url = ch.cv.toDataURL('image/png');
-            if (url.length <= MAX_SHOT) { viewOf().shots[ch.entry.id] = url; return true; }
+            if (url.length <= MAX_SHOT) { viewOf().shots[k] = url; return true; }
         } catch (e) { /* toDataURL 失败（极端情况下画布不可导出）就不存，只保留暂停状态 */ }
         return false;
     }
     function paintShot(ch) {
-        const u = DOC.view && ch.entry && DOC.view.shots[ch.entry.id];
+        const k = keyOf(ch);
+        const u = k && DOC.view && DOC.view.shots[k];
         if (!u) return false;
         ch.ctx.clearRect(0, 0, ch.w, ch.h);
         const img = new Image();
@@ -1284,49 +1343,59 @@
         ch.shotPainted = true;
         return true;
     }
-    // 同一 id 可能对应多块画布（理论上只有左格那块），一起冻结；快照只从左格画布取
+    // 同一 key 可能对应多块画布（列表小图 / 单文件大图 / 格子），一起冻结；快照各存各的
     // 右栏是编辑器，跟左栏的播发状态无关：它永远实时跑，不受这里的暂停影响
-    function setPaused(id, on, opts) {
+    function setPaused(key, on, opts) {
+        if (!key) return;
         const clean = !archiveDirty();   // 同上：先取，改 view 之后就取不到了
         const v = viewOf();
-        v.paused = v.paused.filter((x) => x !== id);
-        if (on) v.paused.push(id);
-        else delete v.shots[id];      // 恢复播放 = 这张快照作废；清掉，免得存档里越攒越多陈旧图
-        for (const ch of chartsOfId(id)) {
+        v.paused = v.paused.filter((x) => x !== key);
+        if (on) v.paused.push(key);
+        else delete v.shots[key];     // 恢复播放 = 这张快照作废；清掉，免得存档里越攒越多陈旧图
+        for (const ch of chartsOfKey(key)) {
             ch.paused = on;
             if (on) captureShot(ch);
+            renderPlayBtn(ch);
         }
-        const cell = cellOf(id);
-        if (cell) renderPlay(cell);
-        syncGlobalPlay();      // 单格暂停也影响"是不是全部暂停" → 全局按钮文案要跟着变
+        syncGlobalPlay();      // 单个暂停也影响"是不是全部暂停" → 全局按钮文案要跟着变
         refreshDirty();
         // 暂停/恢复都顺手存一次：播放状态与快照都在存档里（不提交任何草稿）
         if (!opts || !opts.silent) viewAutoSave(clean);
     }
+    // 全部暂停 = 当前视野里所有"有身份的画布"：矩阵各格 + 模板视图里的各条
+    function pauseKeys() {
+        const out = [];
+        for (const c of cellCharts) if (c.entry) out.push(c.entry.id);
+        for (const ch of viewCharts) if (ch.file) out.push(ch.file);
+        return out;
+    }
     function allPaused() {
-        const ids = cellCharts.map((c) => c.entry && c.entry.id).filter(Boolean);
-        return ids.length > 0 && ids.every(isPaused);
+        const ks = pauseKeys();
+        return ks.length > 0 && ks.every(isPaused);
     }
     function setAllPaused(on) {
         const clean = !archiveDirty();
-        for (const c of cellCharts) if (c.entry) setPaused(c.entry.id, on, { silent: true });
+        for (const k of pauseKeys()) setPaused(k, on, { silent: true });
         syncGlobalPlay();
         viewAutoSave(clean);
     }
-    function renderPlay(cell) {
-        const on = isPaused(cell.entry.id);
-        cell.cell.classList.toggle('paused', on);
-        cell.playBtn.textContent = on ? '▶' : '⏸';
-        cell.playBtn.title = on ? '继续播放这一格（快照会一起清掉）' : '暂停这一格（画面停住，并存一张快照到存档）';
+    // 播放按钮就地刷：格子把 paused 打在 .cell 上，模板条目打在自己的卡片上（共用 .paused 的压暗样式）
+    function renderPlayBtn(ch) {
+        if (!ch.playBtn) return;
+        const on = isPaused(keyOf(ch));
+        ch.playBtn.textContent = on ? '▶' : '⏸';
+        ch.playBtn.title = on ? '继续播放（快照会一起清掉）' : '暂停（画面停住，并存一张快照到存档）';
+        const box = ch.cell || ch.card;
+        if (box) box.classList.toggle('paused', on);
     }
     // 载入 / adoptDoc 之后：把暂停状态贴到各块画布上，并把存档里的快照画回来
     function applyView() {
-        for (const cell of cellCharts) {
-            renderPlay(cell);
-            for (const ch of chartsOfId(cell.entry.id)) {
-                ch.paused = isPaused(cell.entry.id);
-                if (ch.paused) paintShot(ch);
-            }
+        for (const ch of charts) {
+            const k = keyOf(ch);
+            if (!k) continue;                  // 右栏输出图 / 逐级卡没有身份，不参与
+            ch.paused = isPaused(k);
+            if (ch.paused) paintShot(ch);
+            renderPlayBtn(ch);
         }
         labOut.paused = false;    // 右栏是编辑器，始终实时（与左栏的播发/暂停无关）
         syncGlobalPlay();
@@ -1335,7 +1404,7 @@
         const b = document.getElementById('gPlay');
         const all = allPaused();
         b.textContent = all ? '▶ 全部播放' : '⏸ 全部暂停';
-        b.title = all ? '恢复所有格子播放' : '暂停所有格子（每格各存一张快照到存档）';
+        b.title = all ? '恢复所有画布播放' : '暂停所有画布（各存一张快照到存档）';
     }
     buildGrid();
 
