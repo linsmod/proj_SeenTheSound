@@ -1,0 +1,8 @@
+{
+  "title": "未命名对比",
+  "desc": "",
+  "targets": [
+    "content/Templates/inv+zscore.json",
+    "content/Templates/inv+rescale.json"
+  ]
+}

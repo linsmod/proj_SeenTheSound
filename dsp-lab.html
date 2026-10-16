@@ -23,22 +23,21 @@
     /* 全局图例：12 音级配色只画一次，各图不再逐线渲染音名（否则 8×12 个小字互相压叠） */
     .legend-row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; padding: 6px 12px; background: #0b1226; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #8fa2c8; }
     .legend-row .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
-    /* 图表ListView单元格：高度写死 + 参数条移到画布下方并 margin-top:auto
-       → 各格画布 y 坐标完全一致，横向逐行比对。宽度不写死，由 grid 列宽自适应 */
-    /* 主体三栏：左 = 文件树（content/ 目录树），中 = 可换视图的面板（ListView / 目录列表 / 单文件链路），右 = 编辑器。
-       左树是导航 + 右键管理入口；中间默认放"画布网格"，也可以 open() 切成模板列表或某条链路的详情。
+    /* 主体三栏：左 = 文件树（content/ 目录树），中 = 可换视图的面板（目录列表 / 单文件链路），右 = 编辑器（dspEditorView）。
+       左树是导航 + 右键管理入口；中间装什么由 open() 决定（目录卡片列表或某条链路的详情）。
        窄屏（手机等）放不下三栏时靠 flex-wrap 依次换行，不维护断点。 */
     .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 10px 12px 16px; }
-    /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着 grid 一起长） */
+    /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着中间面板一起长） */
     .tree { flex: 0 0 216px; box-sizing: border-box; padding: 4px 4px 6px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; }
     /* 树 = 磁盘 content/ 的目录结构：每个目录一个 .grp（目录行 + .kids 内容容器），逐层嵌套缩进 */
     .tree > div + div { margin-top: 2px; }
     /* 目录行可展开/收起（VSCode 那套）：三角单独可点，收起时 .kids 整块隐藏（后代目录与文件一起收） */
     .tree .tnode .caret { flex: none; width: 13px; text-align: center; color: #8fa2c8; font-size: 10px; line-height: 1; cursor: pointer; user-select: none; }
     .tree .tnode .caret:hover { color: #fff; }
+    .tree .tnode .caret.void { cursor: default; }        /* 空目录只有占位，不给展开/收起 */
     .tree .grp.collapsed > .kids { display: none; }
     .tree .kids { padding-left: 10px; }
-    .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #bcc8e8; cursor: pointer; }
+    .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #bcc8e8; cursor: pointer; user-select: none; }
     .tree .tnode:hover { background: #17223f; }
     .tree .tnode.sel { background: rgba(74,224,255,0.14); box-shadow: inset 0 0 0 1px rgba(74,224,255,0.45); color: #cbeeff; }
     .tree .tnode .to { flex: none; width: 15px; color: #4ae0ff; }
@@ -48,48 +47,17 @@
     /* 模板行：非用户创建，只能「从模板新建」出自己的副本，所以整行压暗一档以示只读 */
     .tree .tnode.tpl .tn { color: #9fb0d6; }
     .tree .tnode.tpl .to { color: #6d7fa6; }
-    .tree .empty { padding: 3px 6px 6px; font-size: 11px; color: #45557a; }
-    /* 中间：grid 预览区。用 auto-fill 的 1fr 列，列宽一致 → 跨行也能对齐 */
+    /* 中间：可换视图的面板（dsplistview / dspview），宽度自适应 */
     .mid { flex: 1 1 420px; min-width: 0; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
-    /* 卡片外壳：网格各格（.cell）与右栏编辑器（.lab）共用同一套外观 —— 背景/圆角/描边/纵向流。
-       .lab 里 .etop/.erow/.dsc 是编辑头（选目标、改标题说明），画布是"这一格的最终结果"，
-       再往下是工具条与逐级卡 —— 与一个 cell 的"标题 + 画布 + 底部一条参数带"同构，只是多了编辑控件。 */
-    .cell, .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; }
-    /* 高度从 210 加到 238：底部多一条播放器按钮行。各格仍然等高 → 画布 y 依旧对齐 */
-    .cell { height: 238px; }
-    .lab { flex: 0 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
+    /* 右栏编辑器（dspEditorView）外壳：背景/圆角/描边/纵向流。
+       .etop/.erow/.dsc 是编辑头（改标题说明），画布是"当前链的最终结果"，再往下是工具条与逐级卡。 */
+    .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; flex: 0 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
     /* 吸附 + 栏内滚动只在三栏并排时启用：阈值 ≈ 216 + 420 + 372 + 两个 gap + padding = 1064 */
     @media (min-width: 1064px) {
         .lab, .tree { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
     }
-    /* 标题 / 副标题：cell 与编辑器共用 */
-    .cell .hd { flex: none; display: flex; align-items: center; font-size: 14px; font-weight: 700; color: #bcc8e8; cursor: pointer; }
-    /* 标题行三段分开：序号徽标 / 标题文本 / 已改标记。序号不进标题文本 ——
-       标题可改、还能「从模板新建」，序号必须由位置算，改名与增删格都不会打乱编号。
-       .ttl 吃掉剩余宽度（flex:1 + min-width:0）：标题过长时自己截断，
-       后面的 ● ✎ 始终被顶到这一行最右端。 */
-    .cell .hd .ord { flex: none; margin-right: 4px; color: #4ae0ff; }
-    .cell .hd .ttl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cell .hd .mark { flex: none; margin-left: 4px; color: #ffb347; font-size: 10px; }
-    .cell .hd .pmark { flex: none; margin-left: 4px; color: #4ae0ff; font-size: 11px; }   /* ✎ = 该格有未保存草稿 */
-    .cell canvas.mx { cursor: pointer; }
-    /* 这一格正在右栏被编辑且草稿已脏 → 锁住左格参数条：状态在右栏手里，左格再改就成两份了 */
-    .cell .pbar.locked { opacity: 0.35; pointer-events: none; }
-    /* .sel = 正在被右栏编辑的这一格。tabindex + Enter/Space 让键盘也能选中（focus-visible 出虚线框） */
-    .cell.sel { border-color: #4ae0ff; box-shadow: 0 0 0 1px rgba(74,224,255,0.45); }
-    .cell:focus-visible { outline: 1px dashed #4ae0ff; outline-offset: 1px; }
-    .cell .pipe, .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     canvas.mx { flex: none; display: block; width: 100%; height: 132px; background: #0a1022; border-radius: 6px; }
-    /* 参数条贴单元格底部：有无参数都占同一条带（选择器收窄到 .cell，避免影响顶栏的 #globalBar） */
-    .cell .foot { flex: none; margin-top: auto; }      /* 参数条 + 播放器按钮行合成一个底部块，整体贴底 */
-    /* 底部播放器按钮组：右对齐。⏸/▶ = 该格冻结 / 继续播放（恢复播放时快照随之清掉） */
-    .cell .prow { display: flex; justify-content: flex-end; gap: 4px; margin-top: 3px; }
-    .cell .prow button { flex: none; min-width: 22px; height: 18px; padding: 0 5px; background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; font-size: 11px; line-height: 1; cursor: pointer; }
-    .cell .prow button:hover:not(:disabled) { background: #263a60; color: #fff; }
-    .cell .prow button:disabled { opacity: 0.3; cursor: default; }
-    .cell.paused canvas.mx { opacity: 0.55; }
-    .cell.paused .hd .ttl { color: #7d8db3; }
     /* 顶栏的全局播放控制：与全局参数条同族，放在它们右边 */
     .gctl { display: inline-flex; align-items: center; gap: 4px; }
     .gctl button { background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; font-size: 12px; padding: 2px 8px; cursor: pointer; }
@@ -128,27 +96,25 @@
     .lab .dirty { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffb347; }
     .lab .xbtn { flex: none; width: 20px; height: 18px; padding: 0; background: none; border: 1px solid transparent; border-radius: 4px; color: #8fa2c8; font-size: 12px; line-height: 1; cursor: pointer; }
     .lab .xbtn:hover { background: #263a60; color: #fff; border-color: rgba(255,255,255,0.15); }
-    /* 空态：没有选中任何一格时只留这句提示，其余控件全部收起 */
+    /* 空态：没有打开任何编辑目标时只留提示块（含「自由探索」入口），其余控件全部收起 */
     .lab .idle { display: none; padding: 22px 12px; font-size: 12px; line-height: 1.8; color: #5a6c94; text-align: center; }
     .lab.idle .idle { display: block; }
     .lab.idle .erow, .lab.idle .dsc, .lab.idle .pipe, .lab.idle .mx, .lab.idle .ltools, .lab.idle .lcharts { display: none; }
-    /* 只读态（模板 / 原始输入格）：不给保存、不给级联编排，标题/说明仍可选中复制。
-       编排按钮一并藏掉，是为了把"只读"这条约定钉死 —— 将来若出现带级的只读条目也不会漏出编辑入口。 */
-    .lab.ro .edit-only, .lab.ro .lcard-hd .en, .lab.ro .lcard-hd .sel, .lab.ro .lcard-hd .sops { display: none; }
-    .lab.ro input.ttl, .lab.ro textarea.dsc { opacity: 0.72; }
-    .lab.ro .lcharts:empty::after { content: '（原始输入没有级联：什么都不做）'; }
-    /* 只读提示：告诉用户"这一条不能改，要改就从模板新建一份"，否则会以为界面坏了 */
-    .lab .rohint { display: none; flex: none; margin: 2px 0 4px; padding: 4px 6px; background: #17223f; border-left: 2px solid #4ae0ff; border-radius: 4px; font-size: 11px; line-height: 1.6; color: #9fb0d6; }
-    .lab.ro .rohint { display: block; }
+    .lab .idle button { margin-top: 10px; }
+    /* 自由探索提示：DRAFT 是自由草稿时显示一条说明（没内容时整块收起） */
+    .lab .rohint { flex: none; margin: 2px 0 4px; padding: 4px 6px; background: #17223f; border-left: 2px solid #4ae0ff; border-radius: 4px; font-size: 11px; line-height: 1.6; color: #9fb0d6; }
+    .lab .rohint:empty { display: none; }
     .lab .erow { flex: none; display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
     .lab .erow .ord { flex: none; color: #4ae0ff; font-size: 14px; font-weight: 700; }
     .lab input.ttl { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: #0a1022; color: #e8eefc; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 13px; font-weight: 700; padding: 2px 4px; }
     .lab textarea.dsc { flex: none; width: 100%; box-sizing: border-box; margin-bottom: 4px; background: #0a1022; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 11px; padding: 2px 4px; resize: vertical; }
-    /* 关闭时的未保存询问（原生 dialog，语义与 VSCode 关标签一致：保存 / 丢弃 / 取消） */
-    dialog { background: #0e1630; color: #bcc8e8; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 14px 16px 12px; min-width: 340px; max-width: 460px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
-    dialog::backdrop { background: rgba(4,8,18,0.62); }
+    /* 页面自绘模态（不用浏览器原生 dialog / alert / confirm）：遮罩 + 面板，点遮罩或 Esc = 取消 */
+    .modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(4,8,18,0.62); }
+    .modal[hidden] { display: none; }
+    .modal-panel { box-sizing: border-box; background: #0e1630; color: #bcc8e8; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 14px 16px 12px; min-width: 340px; max-width: 460px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
     .dlg-t { font-size: 14px; font-weight: 700; color: #e8eefc; margin-bottom: 6px; }
     .dlg-b { font-size: 12px; line-height: 1.7; color: #8fa2c8; white-space: pre-line; margin-bottom: 12px; }
+    .dlg-b[hidden] { display: none; }
     .dlg-f { display: flex; gap: 8px; justify-content: flex-end; }
     /* 格子右上角 ⋯ 弹出的格级菜单：编辑 / 另存为 / 删除。挂在 body 上（格内浮层会被 grid 行布局挤变形），
        position:fixed + getBoundingClientRect 用视口坐标，不用管滚动量 */
@@ -156,14 +122,13 @@
     .cmenu button { display: block; width: 100%; padding: 4px 8px; background: none; border: 0; border-radius: 4px; color: #bcc8e8; font-size: 12px; text-align: left; cursor: pointer; }
     .cmenu button:hover { background: #263a60; color: #fff; }
     .cmenu button.danger:hover { background: #6b2440; }
-    /* 中心面板的视图切换：面包屑 + 三块互斥视图（grid / dsplistview / dspview），由 open() 决定装哪块 */
+    /* 中心面板的视图切换：面包屑 + 两块互斥视图（dsplistview / dspview），由 open() 决定装哪块 */
     .crumb { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-bottom: 8px; font-size: 12px; color: #8fa2c8; }
     .crumb .seg { padding: 1px 7px; background: #141d34; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; color: #8fa2c8; cursor: pointer; }
     .crumb .seg:hover { background: #263a60; color: #fff; }
     .crumb .seg.now { cursor: default; color: #cbeeff; background: rgba(74,224,255,0.10); border-color: rgba(74,224,255,0.45); }
     .crumb .sp { color: #45557a; }
-    /* 播放按钮行与参数条：格子（.cell）与模板条目（.tcard / .dspview）共用同一套，
-       结构也照格子来 —— 标题 → 管道 → 画布 → 参数条+播放按钮，画面 y 对齐 */
+    /* 播放按钮行与参数条：模板条目（.tcard / .dspview）用这一套 —— 标题 → 管道 → 画布 → 参数条+播放按钮 */
     .prow { display: flex; justify-content: flex-end; gap: 4px; margin-top: 3px; }
     .prow button { flex: none; min-width: 22px; height: 18px; padding: 0 5px; background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; font-size: 11px; line-height: 1; cursor: pointer; }
     .prow button:hover { background: #263a60; color: #fff; }
@@ -172,11 +137,13 @@
     .tcard.paused .ttitle { color: #7d8db3; }
     /* dsplistview：某个目录的列表视图，一格一个文件，小画布即取即看 */
     .dsplist { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
+    /* 对比视图的标题条：横跨整行（.dsplist 是网格布局，得让它占满一行） */
+    .cmpv-head { grid-column: 1 / -1; padding: 2px 2px 4px; font-size: 12px; color: #8fa2c8; }
     .dsplist .tcard { box-sizing: border-box; display: flex; flex-direction: column; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 6px 8px 8px; cursor: pointer; }
     .dsplist .tcard:hover { border-color: rgba(74,224,255,0.45); }
     .dsplist .tcard.sel { border-color: #4ae0ff; box-shadow: 0 0 0 1px rgba(74,224,255,0.45); }
-    /* 三块视图互斥：[hidden] 只靠 UA 样式挡不住 .grid/.dsplist 自己的 display，这里显式压掉 */
-    .grid[hidden], .dsplist[hidden], .dspview[hidden] { display: none; }
+    /* 两块视图互斥：[hidden] 只靠 UA 样式挡不住 .dsplist 自己的 display，这里显式压掉 */
+    .dsplist[hidden], .dspview[hidden] { display: none; }
     /* 树里的模板目录：目录行平齐、文件行缩进一档，看得出是同一目录下的条目 */
     .tree .tnode.dir { font-weight: 700; }
     .tree .tnode.file { margin-left: 14px; }
@@ -184,7 +151,7 @@
     .dsplist .ttitle { font-size: 14px; font-weight: 700; color: #bcc8e8; margin: 2px 0; }
     .dsplist .tdesc { margin-top: 4px; font-size: 11px; line-height: 1.6; color: #8fa2c8; }
     .dsplist .pipe, .dspview .pipe { margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* dspview：单个模板文件的预览视图 —— 大画布 + 逐级算子 + 入口按钮（只读，要改就新建副本） */
+    /* dspview：单个文件的链路视图 —— 大画布 + 逐级算子 + 入口按钮 */
     .dspview { background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 8px 10px 10px; }
     .dspview .vh { font-size: 15px; font-weight: 700; color: #e8eefc; }
     .dspview .vdesc { margin: 4px 0 6px; font-size: 11px; line-height: 1.7; color: #8fa2c8; }
@@ -210,7 +177,6 @@
     <aside class="tree" id="tree"></aside>
     <div class="mid">
         <div class="crumb" id="crumb"></div>
-        <div class="grid" id="grid"></div>
         <div class="dsplist" id="dsplist" hidden></div>
         <div class="dspview" id="dspview" hidden></div>
     </div>
@@ -219,7 +185,10 @@
             <span class="dirty" id="labDirty"></span>
             <button class="xbtn" id="labClose" type="button" title="关闭当前编辑（未保存会先问，走 VSCode 关闭标签那套：保存 / 丢弃 / 取消）">✕</button>
         </div>
-        <div class="idle">左栏点一行、或中间点一张卡片，即可编辑<br/>管理动作（从模板新建 / 复制 / 删除 / 恢复出厂）在左栏那行的右键菜单里</div>
+        <div class="idle">
+            左栏点文件行、或双击中间卡片 → 在这里编辑那一条<br/>
+            <button class="lbtn primary" id="labScratch" type="button" title="临时拼一条链试效果：不落盘，按「保存」会另存为一条「我的图」">＋ 自由探索</button>
+        </div>
         <div class="erow">
             <span class="ord" id="labOrd"></span>
             <input class="ttl" id="labTitle" type="text" maxlength="60" placeholder="标题"/>
@@ -236,15 +205,13 @@
         <div class="lcharts" id="labCharts"></div>
     </div>
 </div>
-<dialog id="closeDlg">
-    <div class="dlg-t" id="dlgTitle"></div>
-    <div class="dlg-b" id="dlgBody"></div>
-    <div class="dlg-f">
-        <button class="lbtn primary" id="dlgSave" type="button">保存并关闭</button>
-        <button class="lbtn" id="dlgDrop" type="button">丢弃改动</button>
-        <button class="lbtn" id="dlgCancel" type="button">取消</button>
+<div class="modal" id="modal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="dlg-t" id="modalTitle"></div>
+        <div class="dlg-b" id="modalBody"></div>
+        <div class="dlg-f" id="modalFoot"></div>
     </div>
-</dialog>
+</div>
 <script>
 (function () {
     'use strict';
@@ -331,66 +298,44 @@
             }
         }, params: [] },
     };
-    // 一级工厂：id + 启用位；参数默认值由 buildParams 按 spec 填进 p
-    const stage = (id) => ({ id, on: true, p: {} });
-    // 图表ListView定义：8 条内置级联，标题写"为什么选它"（想看清什么特征），
-    // 机制（哪一级、什么算子、什么顺序）由下方 .pipe 摘要实时显示，悬停格子显示 desc。
-    // id 是稳定身份（存档 key、另存为/删除/选中都靠它）——标题可改，所以绝不能拿标题当 key。
-    // 标题里不写 ①…⑳：序号由格子位置算出来（见 ordLabel），改名和增删格都不会打乱编号。
-    const CHART_DEFS = [
-        { id: 'c1', title: '看瞬时动态范围', desc: '重缩放基线：逐时刻用 12 音级的 min/max 拉伸到 0~1，丝带上下缘始终贴边 —— 每个时刻都能一眼读出"最平坦与最不坦平的音级差多少"。数据为满窗 K 点写入时冻结；主面板极差图走每帧滚动窗，仅最左 K−1 个点的窗口不满，两者其余点一致', stages: [stage('inv'), stage('rescale')] },
-        { id: 'c2', title: '聚焦强音级', desc: '先 x^n（默认 n=2）再重缩放：平方让高值主导 min/max，弱音级被压成贴底的一条窄带。想看"此刻谁最强"用这个；代价是丢掉了动态范围本身。n>1 更极端，n<1（<1 即开方）反过来把弱音级拉开', stages: [stage('inv'), stage('pow'), stage('rescale')] },
-        { id: 'c3', title: '让弱音级显形', desc: '先 log(x+1e-3) 再重缩放：先压缩动态范围，弱音级才拿得到画布上的空间。音频 dBFS 的标准思路，也是主面板反平坦度曲线在做的事 —— 与②相反，②牺牲弱音级换峰值对比，③牺牲峰值对比换弱音级可见', stages: [stage('inv'), stage('log'), stage('rescale')] },
-        { id: 'c4', title: '看偏离均值几个 σ', desc: 'z-score：逐时刻算 12 音级的 μ 与 σ，按 ±zMax 夹紧后线性映射 0~1。看的是"相对偏离"而非绝对平坦度 —— 整体音量涨落会在 μ/σ 里被约掉，所以对音量变化免疫', stages: [stage('inv'), stage('zscore')] },
-        { id: 'c5', title: '只看强弱次序', desc: '分位秩：逐时刻按 12 音级大小排秩 0~1（并列取平均秩），完全丢弃幅度信息。强制均匀分布、抗异常值；只看谁排在前面，不看差多少', stages: [stage('inv'), stage('rank')] },
-        { id: 'c6', title: '锐化强弱对比', desc: '先重缩放再 x^n：输入已经是均匀分布，平方把 0~0.5 一段压到 0.25 以下，峰值保持。概率锐化 / 注意力权重的做法 —— 与②同为"平方"，但②在归一化前、⑥在归一化后', stages: [stage('inv'), stage('rescale'), stage('pow')] },
-        { id: 'c7', title: '拉开中间档位', desc: '先重缩放再 tanh：0 与 1 两个端点不动，中段被展开（k 越大中段越陡）。想强调"不上不下"的那批音级、又不让两端溢出时用', stages: [stage('inv'), stage('rescale'), stage('tanh')] },
-        { id: 'c8', title: '轻抬低位、留住高端', desc: '先重缩放再 log 并映回 0~1：0→0、1→1 端点不动，低段被温和抬起。比③温和得多 —— ③是在归一化之前压缩动态范围（幅度大），⑧是在归一化之后微调（幅度小）', stages: [stage('inv'), stage('rescale'), stage('log01')] },
-    ];
 
-    // ---------- 文档模型：一份可序列化 JSON = 整页真相（草稿） ----------
-    // { v, charts: [ {id, title, desc, stages:[{id,on,p,collapsed}]}] }
-    //   id      稳定身份：'c1'…'c8' 内置 8 图，LAB_ID 实验台，'uN' 复制出来的新图。标题可改，不能拿来当 key
+    // ---------- 文档模型：一份可序列化 JSON = 视图状态 + 「我的图」的内存镜像 ----------
+    // { v, charts: [ {id, title, desc, stages:[{id,on,p,collapsed}]}], view }
+    //   id      = 文件名（'u1'…），与 content/My dsps/<id>.json 一一对应
     //   stages  按 id 查 OPS 注册表；非法 id / 越界参数在 sanitizeStages 里就地纠正
-    // DOC 是当前工作副本（页面所见即 DOC：改标题、改说明、增删级、拖参数都直接写它，没有第二份副本要同步）
-    // lastSaved 是最近一次存进服务端的 JSON；两者不等 = 状态位报"未落盘"。左格参数条也写 DOC —— 成品可就地调参
-    // PRISTINE 存内置 8 图的出厂快照：供「恢复出厂」和"是否改过(●)"角标用
-    // 0 号输入格不进 DOC：它没有任何可改字段，是所有图的共同起点
-    const DOC_V = 1, LAB_ID = 'lab', LEGACY_LAB_KEY = 'labStages', LEGACY_BROWSER_KEY = 'matrixDoc';
+    // 内容真相全在 content/ 下：Templates/ 只读预设、My dsps/ 我的图；DOC 只跟磁盘同步 + 存视图状态。
+    // lastSaved 是最近一次存进服务端的 JSON；两者不等 = 状态位报"未落盘"。
+    const DOC_V = 1, LEGACY_BROWSER_KEY = 'matrixDoc';
     const MAX_STAGES = 8;                        // 与"加一级"上限一致
+    // 历史内置 id（旧文档里的 c1…c8 / lab / input）：加载时丢弃，也不当"我的图"处理
+    const BUILTIN_IDS = new Set(['input', 'lab', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8']);
     const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
     function ordLabel(n) { return n >= 1 && n <= 20 ? CIRCLED[n - 1] : '(' + n + ')'; }
     const cloneStage = (s) => ({ id: s.id, on: s.on, p: { ...s.p }, collapsed: s.collapsed });
     // 存档比对用的规范形式：p 的键排序，避免同一份数据仅因键序不同被误判成"改过"
     function sortObj(o) { const r = {}; for (const k of Object.keys(o).sort()) r[k] = o[k]; return r; }
-    // 内容（不含身份）：判"与出厂/模板是否同一份"只看这些。from 只是溯源标签，不能算进内容，
-    // 否则刚从模板新建的副本立刻就被判成"改过"（副本带 from、出厂快照不带）
-    function contentJson(e) {
-        return JSON.stringify({
-            title: e.title, desc: e.desc,
-            stages: e.stages.map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p), collapsed: !!s.collapsed })),
-        });
-    }
     function entryJson(e) {
         return JSON.stringify({
-            id: e.id, title: e.title, desc: e.desc, from: e.from,
+            id: e.id, title: e.title, desc: e.desc,
             stages: e.stages.map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p), collapsed: !!s.collapsed })),
         });
     }
-    // 首次访问时实验台的默认级联：反相 → scalar → vector → scalar，演示三种 kind 的位置差异。
-    // 声明放在这里而不是编辑器段：loadDoc() 在模块初始化时就可能调用 defaultLabEntry()，放到后面会撞 TDZ
-    const LAB_DEFAULT_STAGES = [{ id: 'inv', on: true, p: {} }, { id: 'pow', on: true, p: {} }, { id: 'rescale', on: true, p: {} }, { id: 'log01', on: true, p: {} }];
-    function defaultLabEntry() {
-        const stages = labDefaultCollapse((sanitizeStages(LAB_DEFAULT_STAGES) || []).map((s) => ({ ...s })));
-        return { id: LAB_ID, title: '自由探索 · 级联', desc: '随手拼一条链看效果；不改动左侧任何一格，只存在浏览器本地', stages };
+    // 「自由探索」草稿（dspEditorView 的默认内容）：反相 → 幂 → 重缩放 → log(0~1)，演示三种 kind 的位置差异。
+    // 它**不是** DOC 条目、不落盘：只是右栏编辑器里的一条临时链，按「保存」才另存为一条「我的图」。
+    // 声明放在这里而不是编辑器段：初始化时就可能用到，放到后面会撞 TDZ
+    const SCRATCH_ID = '@scratch';
+    const SCRATCH_STAGES = [{ id: 'inv', on: true, p: {} }, { id: 'pow', on: true, p: {} }, { id: 'rescale', on: true, p: {} }, { id: 'log01', on: true, p: {} }];
+    function defaultScratchEntry() {
+        return {
+            id: SCRATCH_ID, title: '自由探索 · 级联',
+            desc: '随手拼一条链看效果；不落盘 —— 按「保存」会另存为一条「我的图」',
+            stages: labDefaultCollapse((sanitizeStages(SCRATCH_STAGES) || []).map((s) => ({ ...s }))),
+        };
     }
     function defaultDoc() {
         return {
             v: DOC_V,
-            // 过一遍 sanitizeStages：它会把每级 params 的缺省补全，DOC 落盘前就是完整的一份，
-            // 不然 buildParams 后补的默认值会让"已保存基线"立刻对不上（● 未保存 / ● 已改 误亮）
-            charts: CHART_DEFS.map((d) => ({ id: d.id, title: d.title, desc: d.desc, stages: sanitizeStages(d.stages) || [] }))
-                .concat([defaultLabEntry()]),
+            charts: [],        // 内容真相在磁盘：charts 由 mergeDspsIntoDoc() 从 content/My dsps/ 填
             view: emptyView(),
         };
     }
@@ -399,15 +344,23 @@
     // 暂停/快照的 key 有两种：格子 id（input / c1… / uN）与文件路径（content/Templates/x.json 等），
     // 模板条目也能暂停、也存快照，所以两种 key 都要在清洗时留下。
     // 两类条目都能暂停/存快照，key 就是各自的路径；清单是异步拉的，清洗那一刻可能还是空的
-    // → 只能按形态认：content/ 下的 .json（文件）、content/ 下以 / 结尾的目录（收起状态）。
-    const DIR_TPL = 'content/Templates/', DIR_DSP = 'content/My dsps/';
-    const FILE_KEY_RE = /^content\/(?:[^/]+\/)*[^/]+\.json$/;
+    // → 只能按形态认：content/ 下的 .json / .cmpv（文件）、content/ 下以 / 结尾的目录（收起状态）。
+    const DIR_TPL = 'content/Templates/', DIR_DSP = 'content/My dsps/', CMPV_DIR = 'content/Compares/';
+    const CONTENT_ROOT = 'content/';     // 内容根（= ROOT）：显示路径时省略这段前缀，content 本身不写出来
+    const FILE_KEY_RE = /^content\/(?:[^/]+\/)*[^/]+\.(?:json|cmpv)$/;
     const DIR_KEY_RE = /^content\/(?:[^/]+\/)*$/;
     function isFileKey(k) { return typeof k === 'string' && FILE_KEY_RE.test(k); }
     function dirOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? '' : file.slice(0, i + 1); }
-    function stemOf(file) { const i = file.lastIndexOf('/'); const n = i < 0 ? file : file.slice(i + 1); return n.replace(/\.json$/, ''); }
+    function stemOf(file) { const i = file.lastIndexOf('/'); const n = i < 0 ? file : file.slice(i + 1); return n.replace(/\.[^./]+$/, ''); }
+    // content/ = ROOT：显示路径时省掉这段前缀与结尾的斜杠（'content/Templates/' → 'Templates'）
+    function relToRoot(path) {
+        const p = path.indexOf(CONTENT_ROOT) === 0 ? path.slice(CONTENT_ROOT.length) : path;
+        return p.replace(/\/+$/, '');
+    }
     function isDspFile(file) { return dirOf(file) === DIR_DSP; }
-    function emptyView() { return { paused: [], shots: {}, openedTabs: [], collapsed: [] }; }
+    function isCmpvFile(file) { return typeof file === 'string' && file.endsWith('.cmpv'); }   // 对比视图
+    // expanded：目录的展开清单（目录默认收起，只记展开的；与暂停名单/标签一样属于视图状态）
+    function emptyView() { return { paused: [], shots: {}, openedTabs: [], expanded: [] }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
@@ -416,9 +369,10 @@
         if (Array.isArray(raw.paused)) {
             v.paused = raw.paused.filter(known).slice(0, 64);
         }
-        // 收起的目录：只认 content/ 下以 / 结尾的路径（目录来自磁盘，形态即可判定）
-        if (Array.isArray(raw.collapsed)) {
-            v.collapsed = raw.collapsed.filter((d) => typeof d === 'string' && DIR_KEY_RE.test(d) && d !== 'content/');
+        // 展开的目录：只认 content/ 下以 / 结尾的路径（目录来自磁盘，形态即可判定）
+        // 老存档里的 collapsed（语义相反）直接忽略 —— 读不到 expanded 就是默认全收起
+        if (Array.isArray(raw.expanded)) {
+            v.expanded = raw.expanded.filter((d) => typeof d === 'string' && DIR_KEY_RE.test(d) && d !== 'content/');
         }
         if (Array.isArray(raw.openedTabs)) {
             const seen = new Set();
@@ -442,26 +396,23 @@
         for (const c of raw.charts) {
             if (!c || typeof c !== 'object') continue;
             if (typeof c.id !== 'string' || !c.id || seen.has(c.id)) continue;
+            if (BUILTIN_IDS.has(c.id)) continue;         // 历史内置 id（c1…c8 / lab / input）不再是文档条目
             seen.add(c.id);
             const title = typeof c.title === 'string' ? c.title.trim().slice(0, 60) : '';
-            // from 只认模板 id：它决定「恢复出厂」回到哪一份出厂快照，指到不存在的地方就当没有
-            const from = typeof c.from === 'string' && TEMPLATE_IDS.has(c.from) ? c.from : undefined;
             charts.push({
                 id: c.id,
                 title: title || '未命名',
                 desc: typeof c.desc === 'string' ? c.desc.slice(0, 400) : '',
                 stages: (sanitizeStages(c.stages) || []).slice(0, MAX_STAGES),
-                from,
             });
         }
-        if (!charts.length) return null;
-        const ids = charts.map((c) => c.id).concat([INPUT_ID]);
+        const ids = charts.map((c) => c.id);
         return { v: DOC_V, charts, view: sanitizeView(raw.view, ids) };
     }
     function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
     // ---------- 存档：走后端 /api/doc，落点是 content/ViewState/dsp-lab.json ----------
     // 左栏 = 带预览的文件列表，右栏 = 编辑器标签页；文档本体只有一份，跟着项目走。
-    // 这里是异步的，所以页面先用出厂配置把 UI 立起来，拿到文档再整块重建（buildGrid 会重来一次）。
+    // 这里是异步的，所以页面先用出厂配置把 UI 立起来，拿到文档再整块重建。
     let DOC = defaultDoc();
     let lastSaved = entryDocJson(DOC);   // 已存盘基线；出厂配置先当基线，避免刚进来就报"未落盘"
     let storeState = 'load';              // load → ok | offline | error，用于状态位与提示
@@ -480,7 +431,6 @@
         if (res.ok && body && body.exists && body.doc) {
             const doc = sanitizeDoc(body.doc);
             if (doc) {
-                if (!doc.charts.some((c) => c.id === LAB_ID)) doc.charts.push(defaultLabEntry());
                 storeState = 'ok';
                 return { doc, migrate: null };
             }
@@ -499,17 +449,9 @@
         return { doc: legacyOrDefault(), migrate: null };
     }
     function parseMaybe(s) { try { return JSON.parse(s || 'null'); } catch (e) { return null; } }
-    // 老版本地存档：matrixDoc → 旧到不能再旧的 labStages → 出厂配置
+    // 老版本地存档（matrixDoc）→ 出厂配置
     function legacyOrDefault() {
-        const d = defaultDoc();
-        const fromBrowser = sanitizeDoc(parseMaybe(safeGet(LEGACY_BROWSER_KEY)));
-        if (fromBrowser) {
-            if (!fromBrowser.charts.some((c) => c.id === LAB_ID)) fromBrowser.charts.push(defaultLabEntry());
-            return fromBrowser;
-        }
-        const legacy = sanitizeStages(parseMaybe(safeGet(LEGACY_LAB_KEY)));
-        if (legacy && legacy.length) d.charts[d.charts.length - 1].stages = labDefaultCollapse(ensureInv(legacy));
-        return d;
+        return sanitizeDoc(parseMaybe(safeGet(LEGACY_BROWSER_KEY))) || defaultDoc();
     }
     // 保存：整份覆盖写到服务端。先落内存基线（界面立刻变干净），失败再退回"未落盘"并说明原因。
     // quiet：后台顺手写的视图状态（暂停 / 开着的标签）——不动"保存中…"这个给用户按保存看的状态位
@@ -542,21 +484,18 @@
         const want = ((doc.view && doc.view.openedTabs) || [])[0];   // 还原上次开着的标签（格子若已被删就退回空态）
         selected = want && entryOf(want) ? want : '';
         bindDraft();
-        buildGrid();
         syncEditorInputs();
         labSync(true);
         applyView();          // 还原播放状态 + 把存档里的快照画回画布
         refreshDirty();
     }
-    // 出厂快照（同样过 sanitizeStages，缺省参数补全后才和运行态同形）→ 供「恢复出厂」与"● 已改"角标比
-    const PRISTINE = new Map(CHART_DEFS.map((d) => [d.id, { id: d.id, title: d.title, desc: d.desc, stages: sanitizeStages(d.stages) || [] }]));
-    function isEdited(e) { const p = PRISTINE.get(e.id); return !!p && entryJson(e) !== entryJson(p); }
+
 
     // ---------- 每格一份待写回的草稿（右栏的 editingObject） ----------
     // drafts: id → { d: 该格的深拷贝, base: 克隆那一刻 DOC 的快照 JSON }
     //   按需建（没点过的格子不占内存）、切换目标不清（在 ② ③ 之间来回切，两边改动各自留着）
     //   每份草稿连各级 p 都是新对象 —— 右栏永远碰不到 DOC 里的原始对象
-    // 声明放在这里（网格构建之前）：renderCell 要用 draftDirty() 决定参数条锁不锁、✎ 角标显不显示
+    // 声明放在这里（编辑器初始化之前）：刷新编辑器状态要用 draftDirty() 判断草稿是否脏
     const drafts = new Map();
     let DRAFT = null;             // 当前选中格那一份草稿的引用，省得逐级卡/输入框到处按 id 取
     function cloneEntry(e) { return { id: e.id, title: e.title, desc: e.desc, from: e.from, stages: e.stages.map(cloneStage), readonly: !!e.readonly }; }
@@ -759,14 +698,12 @@
         };
         es.onerror = () => { isRunning = false; statusEl.textContent = '⚠️ 断开，重连中…'; };
     }
-    // ---------- 图表ListView：构建 DOM + 绘制 ----------
+    // ---------- 中间面板的视图画布：构建 DOM + 绘制 ----------
     // 画布尺寸不写死：CSS 侧由 grid 列宽自适应，这里实测每块画布的 CSS 宽当逻辑宽，
     // 位图 = 实测宽 × dpr → CSS 尺寸与位图永远 1:1，任何宽度下文字都不发虚。
     const CH = 132, LAB_C_H = 112;   // 网格各格 / 右栏输出图 / 右栏逐级图各自的画布高
-    const grid = document.getElementById('grid');
-    const charts = [];              // 参与主循环绘制的全部画布（网格格 + 右栏输出图 + 右栏逐级卡）
-    const cellCharts = [];          // 仅网格格：重建网格时按这张表摘除，右栏那两类画布留在 charts 里
-    let selected = '';              // 正在右栏编辑的格子 id；'' = 空态（没打开任何一格，同 VSCode 没开标签）
+    const charts = [];              // 参与主循环绘制的全部画布（中间面板的视图画布 + 右栏输出图 + 右栏逐级卡）
+    let selected = '';              // 右栏编辑器当前目标：我的图 id，或 SCRATCH_ID（自由探索草稿）；'' = 空态
     // 全局图例：12 音级色块 + 音名，各图共用（画线不再逐条标音名）
     (function buildLegend() {
         const box = document.getElementById('legend');
@@ -794,147 +731,39 @@
         ctx.textRendering = 'geometricPrecision';   // 文本按几何精度渲染（不支持的浏览器自动忽略）
         return w;
     }
-    // 0 号：输入（逐音级原始 SFM，未反相、未做任何变换）。放在 grid 最前面，
-    // 是下面所有可编辑图与右侧级联的共同起点。
-    // 它是**只读**的：原始量没有可改字段，反相（1-v）是 OPS 里的可选算子 inv，由各图自己的 stages 决定要不要。
-    // 只读格照样能点开看（标题 / 管道 / 画布都出得来），但不给保存、不给级联编排。
-    // 它不进 DOC —— 不是成品、不落盘，只是数据源。给一个常驻的只读条目，右栏才有东西可显示。
-    const INPUT_ID = 'input';
-    const INPUT_TITLE = '输入 · 原始 SFM';
-    const INPUT_DESC = '0 号输入：逐音级原始 SFM，未经反相也未经任何变换。只读（原始量没有可改字段）—— 反相 1-v 是可选算子，由各图/各级自己决定要不要。';
-    const READONLY_ENTRY = { id: INPUT_ID, title: INPUT_TITLE, desc: INPUT_DESC, stages: [], readonly: true };
-    function isReadonly(id) { return id === INPUT_ID; }
-    // ---------- 模板 vs「我的图」 ----------
-    // 模板 = 非用户创建的那批：内置 ①–⑧、实验台、0 号输入（数据源）。它们**只读**：
-    // 想改就「从模板新建」克隆一份出来，那份 id 形如 uN，进「我的图」，才可改可删。
-    // 判定走代码里的 id 白名单而不是存档里的标记：存档改不动白名单，而用户图永远拿不到 c3 这种 id
-    //（newChartId 只发 uN），所以"模板"这个身份伪造不了。
-    const TEMPLATE_IDS = new Set(CHART_DEFS.map((d) => d.id).concat([LAB_ID, INPUT_ID]));
-    function isTemplate(id) { return TEMPLATE_IDS.has(id); }
-    function isLocked(id) { return isTemplate(id); }    // 只读 = 模板（0 号输入也在白名单里）
-    // 建一格：entry = DOC 里的一格（模板或「我的图」）或 READONLY_ENTRY（0 号输入）
-    // 顺序固定为 标题 → 管道摘要 → 画布 → 参数条（参数在画布下方，格子高度写死，各格画布 y 对齐）
-    // 卡片只负责"看"：预览 + 播放按钮。管理动作（从模板新建 / 复制 / 删除 / 恢复出厂）在左栏文件树的右键菜单里。
-    function buildCell(entry, ord) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        const ro = isLocked(entry.id);
-        // 标题行逐节点写（textContent）：title/desc 来自用户输入且会进 localStorage，
-        // 走 innerHTML 会被引号/尖括号截断属性甚至塞进标签（旧代码用 innerHTML 是因为标题是可信常量）
-        const hd = document.createElement('div');
-        hd.className = 'hd';
-        const ordEl = document.createElement('span'); ordEl.className = 'ord';
-        const ttlEl = document.createElement('span'); ttlEl.className = 'ttl';
-        const markEl = document.createElement('span'); markEl.className = 'mark';
-        markEl.textContent = '●'; markEl.title = '这一条已被改过（与出厂不同）';
-        const pmarkEl = document.createElement('span'); pmarkEl.className = 'pmark';
-        pmarkEl.textContent = '✎'; pmarkEl.title = '这一格有未保存的草稿（点它回来接着改）';
-        hd.append(ordEl, ttlEl, markEl, pmarkEl);
-        const pipeEl = document.createElement('div'); pipeEl.className = 'pipe';
-        const cv = document.createElement('canvas'); cv.className = 'mx';
-        const pbar = document.createElement('div'); pbar.className = 'pbar';
-        // 底部 = 参数条 + 播放器按钮（⏸/▶），合成一块贴底，右对齐
-        const foot = document.createElement('div'); foot.className = 'foot';
-        const prow = document.createElement('div'); prow.className = 'prow';
-        const mkP = (txt, title, fn) => {
-            const b = document.createElement('button');
-            b.type = 'button'; b.textContent = txt; b.title = title;
-            b.addEventListener('click', (ev) => { ev.stopPropagation(); fn(); });
-            prow.appendChild(b);
-            return b;
-        };
-        const playBtn = mkP('⏸', '暂停这一格（画面停住；暂停时会存一张快照到存档里）', () => setPaused(entry.id, !isPaused(entry.id)));
-        foot.append(pbar, prow);
-        cell.append(hd, pipeEl, cv, foot);
-        grid.appendChild(cell);
-        const ch = {
-            entry, ord, ro, cell, ordEl, ttlEl, markEl, pmarkEl, pbar, pipeEl, playBtn,
-            paused: false, shotPainted: false,
-            stages: entry.stages,                    // 与 DOC 里同一批 stage 对象：卡片参数条改的就是成品
-            title: entry.title,
-            out: new Float32Array(SFM_PC * CHART_N),
-            w: 0, h: CH,
-            cv, ctx: cv.getContext('2d'), isCell: true,
-        };
-        cell.tabIndex = 0;                           // 每格都能点开（含只读的模板与输入格）
-        const pick = () => selectChart(entry.id);
-        cell.addEventListener('click', pick);
-        cell.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
-        // 卡片上也能右键呼出同一套管理菜单（不必绕回左栏）：浮层锚在卡片上
-        cell.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openRowMenu(cell, entry.id); });
-        charts.push(ch);
-        ch.w = fitCanvas(cv, CH);
-        renderCell(ch);
-        return ch;
-    }
-    // 格子刷新：序号 / 标题 / 悬停说明 / 管道摘要 / 参数条。
-    // 结构变更（保存写回、增删格、导入）之后必须重跑，否则参数条还按旧算子的 spec 渲染，
-    // 控件与实际算子对不上。参数条回调只刷摘要与"未保存"，不重建（避免打断正在拖的滑杆）。
-    function renderCell(ch) {
-        const e = ch.entry;
-        ch.ordEl.textContent = ch.ord ? ordLabel(ch.ord) : '原';   // 0 号输入没有圈号，给个"原"
-        ch.stages = e.stages;                        // 保存写回时 DOC.stages 被换成新数组，这里跟着重新指向
-        ch.ttlEl.textContent = e.title;
-        ch.title = e.title;
-        ch.cell.title = e.desc || '';
-        ch.markEl.style.display = isEdited(e) ? '' : 'none';
-        ch.cell.classList.toggle('sel', e.id === selected);
-        // 锁参数条两种情形：① 模板/只读格 —— 本来就不许改，只能从模板新建副本；
-        // ② 这一格在右栏有未写回的草稿 —— 同一个参数不能两边各写一次（解锁后照样能在右栏逐级卡里调）。
-        const pending = !ch.ro && draftDirty(e.id);
-        const lock = ch.ro || pending;
-        ch.pmarkEl.style.display = pending ? '' : 'none';
-        ch.pbar.classList.toggle('locked', lock);
-        ch.pbar.title = ch.ro ? '模板（非用户创建）：只读。要改就在左栏这一行上右键「从模板新建」'
-            : pending ? '这一格有未保存的改动（✎），先保存或关掉它，再从左调皮参' : '';
-        ch.pipeEl.textContent = pipeSummary(ch);
-        buildParams(ch.pbar, chartParamSpecs(ch), () => {
-            ch.pipeEl.textContent = pipeSummary(ch);
-            // 左格调参 = 成品改动，直接写 DOC。把这一格的草稿丢掉（锁着的时候它不可能是脏的），
-            // 当前编辑目标的话重新克隆一份，两边不会分叉。
-            drafts.delete(e.id);
-            if (e.id === selected) { bindDraft(); labSync(true); }
-            refreshDirty();
-        });
-    }
     // ---------- 左栏文件树：直接渲染 content/ 的目录结构 ----------
     // 树的唯一来源是磁盘（/api/tree）：目录节点可展开/收起，文件节点 = 一个 .json（只列 .json）。
     //   content/Templates/ = 出厂预设，只读（右键「从模板新建」克隆成自己的图）
     //   content/My dsps/   = 我的图，可读写（右键 编辑 / 保存 / 复制 / 删除）
     //   其它目录           = 同样列出，按只读文件对待（预览 / 从它新建）
-    // 内置 ①–⑧ / 实验台 / 0 号输入不再单独成组：它们都在ListView里有卡片，卡片点得到、右键也有同一套菜单。
     const treeEl = document.getElementById('tree');
-    // 树里每一行都是一个磁盘文件（目录行 / 文件行），不再按 DOC 的条目列 —— DOC 里的格子在ListView里有卡片。
-    // 「恢复出厂」只对内置模板有意义（比较内置出厂快照），我的图从创建起就是独立一条，不记来源。
-    function originPristine(e) { return PRISTINE.get(e.id) || null; }
-    function canReset(id) {
-        const e = entryOf(id);
-        if (!e) return false;
-        const p = originPristine(e);
-        return !!p && contentJson(e) !== contentJson(p);
-    }
+    // 树里每一行都是一个磁盘文件（目录行 / 文件行）—— 内容真相在磁盘，不在内存文档里。
     // 重建整棵树：只在结构变化（增删条目 / 载入新文档 / 刷新磁盘清单）时调用；选中态与标题由 syncTreeFiles 就地刷。
     function buildTree() {
         dirGroups.clear();
         treeFileNodes.clear();
         treeEl.innerHTML = '';
         for (const nd of TREE) treeEl.appendChild(buildTreeNode(nd));   // content/ 的目录结构（磁盘为准）
-        applyDirCollapse();                           // 重建后把收起状态贴回去
+        applyDirExpand();                             // 重建后把展开状态贴回去（默认全收起）
         syncTreeFiles();
     }
 
     // ---------- 中心面板路由：open({ file, panel, viewer }) ----------
-    // 中间区域不再是"永远是ListView"，它是一块可换视图的面板，装什么由 open() 决定：
+    // 中间区域是一块可换视图的面板，装什么由 open() 决定：
     //   open({ file: 'content/Templates/inv+zscore.json' }) → viewer=dspview     单个文件的链路视图
     //   open({ file: 'content/My dsps/u1.json' })           → viewer=dspview     同上（我的图那条）
     //   open({ file: 'content/Templates/' })                → viewer=dsplistview  某个目录的列表视图
-    //   open({ file: '' })                                → viewer=grid        默认：整张图表ListView
+    //   open({ file: '' })                                  → 回默认落地目录（Templates 列表）
     // viewer 可显式传（校验白名单）；不传就按 file 形态推：以 / 结尾 = 目录 → 列表，否则 = 文件 → 单视图。
     // panel 目前只认 'center'（左栏是树、右栏是编辑器，都不走这套路由），传别的直接忽略。
-    const VIEWS = ['grid', 'dsplistview', 'dspview'];
+    const HOME_DIR = DIR_TPL;                // 默认落地：出厂预设目录（content/Templates/）
+    const VIEWS = ['dsplistview', 'dspview'];
     const LIST_C_H = 76, ONE_C_H = 200;      // 列表卡片预览 / 单文件大图各自的画布高
-    let OPEN = { file: '', panel: 'center', viewer: 'grid' };
-    const viewCharts = [];                   // 本视图自建的画布（grid 的格子归 cellCharts，不在这里）
+    let OPEN = { file: HOME_DIR, panel: 'center', viewer: 'dsplistview' };
+    let listSel = '';                        // dsplistview 里选中的卡片（单击）；双击才打开这一条
+    const treeSel = new Set();               // 树里选中的路径集合（Shift/Ctrl 多选，纯 UI 状态、不进存档）
+    let treeAnchor = '';                     // 范围选择的锚点（最近一次普通 / Ctrl 点击的那一行）
+    const viewCharts = [];                   // 本视图自建的画布（换视图时整批摘除）
     const TREE = [];                         // /api/tree 拉回的目录/文件树（左栏渲染的唯一来源）
     const FILES = [];                        // 摊平后的 .json 条目（itemOf / itemsOf 的索引）
     const fileCache = new Map();             // file → 条目（单文件接口取回的、树清单里没有的）
@@ -942,7 +771,11 @@
     const crumbEl = document.getElementById('crumb');
     const listEl = document.getElementById('dsplist');
     const oneEl = document.getElementById('dspview');
-    function viewerOf(file) { return !file ? 'grid' : (file.endsWith('/') ? 'dsplistview' : 'dspview'); }
+    // 空 file = 回默认落地目录（Templates 列表）；以 / 结尾 = 目录列表；.cmpv = 对比视图（同样用卡片列表）；否则 = 单文件链路视图
+    function viewerOf(file) {
+        if (!file || file.endsWith('/') || isCmpvFile(file)) return 'dsplistview';
+        return 'dspview';
+    }
     function fileNameOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? file : file.slice(i + 1); }
     // 这个目录里的 .json 条目（各目录结构相同，渲染代码完全共用）
     function itemsOf(dir) { return FILES.filter((t) => dirOf(t.file) === dir); }
@@ -950,19 +783,24 @@
     // 唯一的路由入口：改 OPEN → 重画中间面板 → 同步树上的选中态
     function open(spec) {
         const s = spec || {};
-        const file = typeof s.file === 'string' ? s.file.trim() : '';
+        let file = typeof s.file === 'string' ? s.file.trim() : '';
+        const home = !file;                                      // 空 file = 回默认落地目录
+        if (home) file = HOME_DIR;
         if ((s.panel || 'center') !== 'center') return;          // 目前只有中间面板参与
-        let v = s.viewer || viewerOf(file);
+        let v = home ? 'dsplistview' : (s.viewer || viewerOf(file));
         if (VIEWS.indexOf(v) < 0) v = viewerOf(file);            // viewer 名不认识 → 按 file 重推
         OPEN = { file, panel: 'center', viewer: v };
+        if (v === 'dspview') listSel = file;     // 打开过的那一条，退回列表时保持选中
+        // 树里同步选中：多选状态下打开其中一条不打断整批选择，其它来源（列表/面包屑）打开则单选它
+        if (!treeSel.has(file)) { setTreeSel([file]); treeAnchor = file; }
         renderCenter();
     }
     function renderCenter() {
         clearViewCharts();
-        grid.hidden = true; listEl.hidden = true; oneEl.hidden = true;
-        if (OPEN.viewer === 'dsplistview') renderList();
-        else if (OPEN.viewer === 'dspview') renderOne(OPEN.file);
-        else setGridVisible(true);
+        listEl.hidden = true; oneEl.hidden = true;
+        if (OPEN.viewer === 'dspview') renderOne(OPEN.file);
+        else if (isCmpvFile(OPEN.file)) renderCmpvList(OPEN.file);   // 对比视图：把 .cmpv 的目标渲染成卡片列表
+        else renderList();
         renderCrumb();
         syncTreeFiles();
         syncGlobalPlay();        // 换视图 = 换了一批可暂停的画布，全局按钮文案要重算
@@ -972,18 +810,7 @@
         for (const ch of viewCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
         viewCharts.length = 0;
     }
-    // ListView视图进出：隐藏时把格子标成 hidden（主循环跳过，画布 display:none 算不出宽度），
-    // 回来时逐块重量（隐藏期间宽度是 0，不重量会拿到 80 的最小宽画一帧变形图）
-    function setGridVisible(on) {
-        grid.hidden = !on;
-        for (const ch of cellCharts) ch.hidden = !on;
-        if (!on) return;
-        for (const ch of cellCharts) {
-            ch.w = fitCanvas(ch.cv, ch.h);
-            if (ch.paused) paintShot(ch);          // 暂停的格子画的是存档快照，重建位图后要补回来
-        }
-    }
-    // 面包屑：ListView › 目录 › 某文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
+    // 面包屑：相对 ROOT（content/）的路径 —— 目录 › 文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
     function renderCrumb() {
         crumbEl.textContent = '';
         const seg = (txt, file, now, title) => {
@@ -996,20 +823,12 @@
             return b;
         };
         const sp = () => { const s = document.createElement('span'); s.className = 'sp'; s.textContent = '›'; crumbEl.appendChild(s); };
-        seg('ListView', '', OPEN.viewer === 'grid', '整张图表ListView（默认视图）');
-        if (OPEN.viewer === 'grid') {
-            for (const nd of TREE) {
-                if (nd.kind !== 'dir') continue;        // 顶层目录各给一段（点进去看该目录的列表）
-                seg('📁 ' + dirLabel(nd.path) + '/', nd.path, false, '打开 ' + nd.path + ' 的列表视图');
-            }
-            return;
-        }
+        // content/ = ROOT：面包屑就是相对根的路径（模板/我的图 › 某个文件），根段本身不写出来
         const dir = dirOf(OPEN.file);
-        sp();
-        seg(dir, dir, OPEN.viewer === 'dsplistview', dir + ' 的列表视图');
+        seg(relToRoot(dir) || './', dir, OPEN.viewer === 'dsplistview', dir + ' 的列表视图');
         if (OPEN.viewer === 'dspview') { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
     }
-    // 文件条目的"底部一条"= 参数条 + 播放按钮（与ListView格子完全同构：画面在上、控件在下）。
+    // 文件条目的"底部一条"= 参数条 + 播放按钮（画面在上、控件在下）。
     // 参数改的是内存里这一条链：模板是只读文件（要固化就「从模板新建」）；
     // 我的图直接改到 DOC 那一格上（文件就是它自己的存档），按「保存」才落盘。
     function buildFileFoot(host, t, ch) {
@@ -1040,19 +859,56 @@
         renderPlayBtn(ch);
         return foot;
     }
-    // 还原：模板丢掉内存里那份（下次按文件重建）；我的图把文件里写的链写回 DOC 那一格
+    // 还原：把文件里写的链写回 DOC 里对应的那一条（模板只丢内存里那份预览）
     function resetItemParams(t) {
         const e = isDspFile(t.file) ? entryOf(stemOf(t.file)) : null;
         if (e) e.stages = sanitizeStages(t.stages) || [];
         delete t._stages;
         renderCenter();
-        if (e) { buildGrid(); refreshDirty(); }
+        if (e) { bindDraft(); labSync(true); refreshDirty(); }
     }
     // 视图重建出来的画布要接回存档里的暂停状态：置 paused（主循环跳过）+ 把快照画回位图
     function bindViewPause(ch) {
         ch.paused = isPaused(keyOf(ch));
         if (ch.paused) paintShot(ch);
         renderPlayBtn(ch);
+    }
+    // dsplistview 卡片：单击 = 只选中（不切视图），双击才打开这一条的链路视图
+    function setListSel(file) {
+        if (file === listSel) return;
+        listSel = file;
+        for (const c of listEl.children) {
+            if (c.classList && c.classList.contains('tcard')) c.classList.toggle('sel', c.dataset.file === listSel);
+        }
+    }
+    // 一张卡片 = 一个文件：路径 / 标题 / 管道摘要 / 实时画布 / 参数条 + 播放按钮。
+    // 目录列表与对比视图共用这套（对比视图只是数据源换成 .cmpv 里列的 targets）。
+    function buildListCard(t, host) {
+        const stages = stagesOfItem(t);
+        const card = document.createElement('div');
+        card.className = 'tcard' + (t.file === listSel ? ' sel' : '');
+        card.dataset.file = t.file;      // 单击选中时就地刷高亮用
+        const nf = document.createElement('div'); nf.className = 'tfile'; nf.textContent = t.file;
+        const tt = document.createElement('div'); tt.className = 'ttitle'; tt.textContent = t.title;
+        const pp = document.createElement('div'); pp.className = 'pipe'; pp.textContent = pipeSummary({ stages });
+        const cv = document.createElement('canvas'); cv.className = 'mx';
+        const ds = document.createElement('div'); ds.className = 'tdesc';
+        ds.textContent = t.desc || '（无说明）';
+        card.append(nf, tt, pp, cv);
+        card.title = t.file + '\n单击：选中；双击：打开这一条（链路视图）';
+        card.addEventListener('click', (ev) => { if (ev.detail > 1) return; setListSel(t.file); });
+        card.addEventListener('dblclick', () => open({ file: t.file }));
+        host.appendChild(card);
+        const ch = {
+            file: t.file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
+            cv, ctx: cv.getContext('2d'), pipeEl: pp, card, isView: true,
+        };
+        buildFileFoot(card, t, ch);
+        card.appendChild(ds);
+        ch.w = fitCanvas(cv, LIST_C_H);
+        bindViewPause(ch);
+        charts.push(ch); viewCharts.push(ch);
+        return ch;
     }
     // dsplistview：某个目录的列表。一格 = 一个文件，小画布用实时数据跑同一条链
     function renderList() {
@@ -1062,34 +918,39 @@
         listEl.textContent = '';
         if (!items.length) {
             const e = document.createElement('div'); e.className = 'tpl-empty';
-            e.textContent = dir + ' 下还没有 .json'
+            e.textContent = dir + ' 下还没有文件'
                 + (dir === DIR_DSP ? '（在 content/Templates/ 的某一行上右键「从模板新建」就能建一条）' : '');
             listEl.appendChild(e);
             return;
         }
-        for (const t of items) {
-            const stages = stagesOfItem(t);
-            const card = document.createElement('div');
-            card.className = 'tcard' + (t.file === OPEN.file ? ' sel' : '');
-            const nf = document.createElement('div'); nf.className = 'tfile'; nf.textContent = t.file;
-            const tt = document.createElement('div'); tt.className = 'ttitle'; tt.textContent = t.title;
-            const pp = document.createElement('div'); pp.className = 'pipe'; pp.textContent = pipeSummary({ stages });
-            const cv = document.createElement('canvas'); cv.className = 'mx';
-            const ds = document.createElement('div'); ds.className = 'tdesc';
-            ds.textContent = t.desc || '（无说明）';
-            card.append(nf, tt, pp, cv);
-            card.title = '打开 ' + t.file;
-            card.addEventListener('click', () => open({ file: t.file }));
-            listEl.appendChild(card);
-            const ch = {
-                file: t.file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
-                cv, ctx: cv.getContext('2d'), pipeEl: pp, card, isView: true,
-            };
-            buildFileFoot(card, t, ch);
-            card.appendChild(ds);
-            ch.w = fitCanvas(cv, LIST_C_H);
-            bindViewPause(ch);
-            charts.push(ch); viewCharts.push(ch);
+        for (const t of items) buildListCard(t, listEl);
+    }
+    // 对比视图（.cmpv）：读它列的目标文件，用同一套卡片渲染；目标已经不在就跳过
+    async function renderCmpvList(file) {
+        listEl.hidden = false;
+        listEl.textContent = '';
+        const tip = document.createElement('div'); tip.className = 'tpl-empty'; tip.textContent = '读取 ' + file + ' …';
+        listEl.appendChild(tip);
+        const doc = await getItem(file);
+        if (!doc || OPEN.file !== file || OPEN.viewer !== 'dsplistview') return;
+        listEl.textContent = '';
+        const targets = Array.isArray(doc.targets) ? doc.targets : [];
+        const head = document.createElement('div');
+        head.className = 'cmpv-head';
+        head.textContent = `${doc.title || doc.name} · 对比 ${targets.length} 项`;
+        head.title = '来自 ' + file;
+        listEl.appendChild(head);
+        let shown = 0;
+        for (const tf of targets) {
+            const t = await getItem(tf);
+            if (!t) continue;                  // 目标文件被删 / 改名了 → 跳过
+            buildListCard(t, listEl);
+            shown++;
+        }
+        if (!shown) {
+            const e = document.createElement('div'); e.className = 'tpl-empty';
+            e.textContent = '这份对比里引用的文件都不在了';
+            listEl.appendChild(e);
         }
     }
     // dspview：单个文件的预览视图 —— 大画布 + 参数条/播放按钮 + 逐级算子 + 入口按钮。
@@ -1137,13 +998,13 @@
             mk('从模板新建', '按当前这份（含你调过的参数）克隆一份可编辑的「我的图」', () => newFromStagesFile(t), 'primary');
         }
         mk('← 列表', '回到 ' + dir + ' 的列表视图', () => open({ file: dir }));
-        mk('✕ 回到ListView', '关掉视图，回到整张图表ListView', () => open({ file: '' }));
+        mk('✕ 关闭', '回到默认目录列表（content/Templates/）', () => open({ file: '' }));
         const ch = {
             file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
             cv, ctx: cv.getContext('2d'), pipeEl: pp, card: oneEl, isView: true,
         };
         oneEl.append(nf, vh, vd, pp, cv);
-        buildFileFoot(oneEl, t, ch);      // 参数条 + 播放/还原：与列表卡片、ListView格子同一套
+        buildFileFoot(oneEl, t, ch);      // 参数条 + 播放/还原：与列表卡片同一套
         oneEl.append(stbox, tools);
         ch.w = fitCanvas(cv, ONE_C_H);
         bindViewPause(ch);
@@ -1183,15 +1044,13 @@
             for (const t of files) if (t && typeof t.file === 'string') FILES.push(t);
         } catch (e) { TREE.length = 0; FILES.length = 0; }
     }
-    // 我的图以文件为准：把 content/My dsps/ 里的条目并进 DOC（右栏编辑器、ListView格子照旧按 id 找得到），
+    // 我的图以文件为准：把 content/My dsps/ 里的条目并进 DOC（右栏编辑器照旧按 id 找得到），
     // 文件里没有的那一格 = 已经在别处删掉了 → 从 DOC 摘掉。
     function mergeDspsIntoDoc() {
         const mine = FILES.filter((it) => isDspFile(it.file));
         const keep = new Set(mine.map((it) => stemOf(it.file)));
-        DOC.charts = DOC.charts.filter((c) => isTemplate(c.id) || keep.has(c.id));
-        const at = DOC.charts.findIndex((c) => c.id === LAB_ID);
-        const insertAt = at < 0 ? DOC.charts.length : at;
-        const fresh = [];        // 一次性插进去：逐个 splice 会把顺序插反
+        DOC.charts = DOC.charts.filter((c) => keep.has(c.id));        // 文件为准：磁盘上没有的一律摘掉
+        const fresh = [];        // 新文件补到末尾
         for (const it of mine) {
             const id = stemOf(it.file);
             const stages = sanitizeStages(it.stages) || [];
@@ -1199,18 +1058,19 @@
             if (e) { e.title = it.title; e.desc = it.desc; e.stages = stages; }
             else fresh.push({ id, title: it.title, desc: it.desc, stages });
         }
-        DOC.charts.splice(insertAt, 0, ...fresh);
+        DOC.charts.push(...fresh);
         lastSaved = entryDocJson(DOC);      // 文件就是存档，并完不该报"未落盘"
         if (selected && !entryOf(selected)) { selected = ''; viewOf().openedTabs = []; }
         drafts.clear(); bindDraft();
-        buildGrid(); syncEditorInputs(); labSync(true); applyView(); refreshDirty();
+        buildTree();                        // 左栏树按最新的磁盘清单重建
+        syncEditorInputs(); labSync(true); applyView(); refreshDirty();
     }
     // 「从模板新建」：把这份文件的链克隆成一条我的图（模板文件本身不动）。
     // 不记 from —— 创建出来就是独立一条，与来源再无关系。
     function newFromStagesFile(t) {
         const stages = stagesOfItem(t).map(cloneStage);
         const title = t.title || fileNameOf(t.file);
-        const dup = DOC.charts.some((c) => !isTemplate(c.id) && c.title === title);
+        const dup = DOC.charts.some((c) => c.title === title);
         addUserChart({ title: title + (dup ? ' 副本' : ''), desc: t.desc || '', stages });
     }
     // ---- 我的图的文件读写：一个 id 一个文件（content/My dsps/<id>.json） ----
@@ -1229,7 +1089,7 @@
             return null;
         }
     }
-    function upsertDspItem(item) {
+    function upsertItem(item) {                  // 磁盘清单 + 左栏树同步一份（.json 与 .cmpv 通用）
         if (!item || !item.file) return;
         delete item._stages;
         const i = FILES.findIndex((x) => x.file === item.file);
@@ -1240,9 +1100,43 @@
         const b = await postDsp('/api/dsps/' + encodeURIComponent(id + '.json'), 'POST', body);
         const item = b && b.item;
         if (!item) return null;
-        upsertDspItem(item);
+        upsertItem(item);
         storeState = 'ok'; storeMsg = ''; refreshDirty();
         return item;
+    }
+    // ---- 对比视图（.cmpv）：多选 → content/Compares/untitled.cmpv，内容是所选 DSP 的路径 ----
+    function nextCmpvName() {
+        const used = new Set(FILES.filter((it) => dirOf(it.file) === CMPV_DIR).map((it) => it.name));
+        if (!used.has('untitled')) return 'untitled';
+        let i = 2;
+        while (used.has('untitled-' + i)) i++;
+        return 'untitled-' + i;
+    }
+    async function createCompare(paths) {
+        const name = nextCmpvName();
+        const b = await postDsp('/api/cmpv', 'POST', { name, title: '未命名对比', targets: paths });
+        const item = b && b.item;
+        if (!item) return;
+        upsertItem(item);
+        open({ file: item.file });               // 建好直接打开这份对比（卡片列表）
+    }
+    async function deleteCmpv(file) {
+        const name = fileNameOf(file);
+        const ok = await ask({
+            title: `删除「${name}」？`,
+            body: '只删这份对比视图本身，被引用的 DSP 文件不动。',
+            buttons: [
+                { text: '删除', cls: 'danger', value: true },
+                { text: '取消', value: false },
+            ],
+        });
+        if (!ok) return;
+        const b = await postDsp('/api/cmpv/' + encodeURIComponent(name), 'DELETE');
+        if (!b) return;
+        const i = FILES.findIndex((it) => it.file === file);
+        if (i >= 0) FILES.splice(i, 1);
+        if (OPEN.file === file) open({ file: CMPV_DIR });
+        buildTree(); refreshDirty();
     }
     async function saveDspFile(t) {
         const id = stemOf(t.file), e = entryOf(id);
@@ -1252,129 +1146,175 @@
     // 保存时把每一条我的图各自写回自己的文件（DOC 那份整份写 /api/doc，两者内容同源）
     async function saveAllDspFiles() {
         for (const c of DOC.charts) {
-            if (isTemplate(c.id)) continue;
             await putDsp(c.id, { title: c.title, desc: c.desc, stages: c.stages });
         }
     }
     // ---------- 树节点：目录行 → dsplistview，文件行 → dspview ----------
     // 目录行做得像 VSCode 的文件夹：一个可点的三角 + 目录名（不带尾巴的斜杠，完整路径在 tooltip 里），
     // 三角只管展开/收起，点行本身还是"打开这个目录的列表视图"（顺手把它展开）。
-    // 每个目录 = 一个 .grp（目录行 + .kids 内容容器）：收起时给 .grp 加 collapsed，.kids 整块隐藏。
+    // 每个目录 = 一个 .grp（目录行 + .kids 内容容器）：目录默认收起，给 .grp 加 collapsed 时 .kids 整块隐藏。
     const dirGroups = new Map();         // dir → { box, caret }，展开/收起就地刷，不重建整棵树
     function dirLabel(dir) {
         const s = dir.replace(/\/+$/, '');
         const i = s.lastIndexOf('/');
         return i < 0 ? s : s.slice(i + 1);
     }
-    function isDirCollapsed(dir) {
-        const c = DOC.view && DOC.view.collapsed;
-        return !!c && c.indexOf(dir) >= 0;
+    // 目录默认收起：view.expanded 里记着的才是展开的（不在清单里 = 收起）
+    function isDirExpanded(dir) {
+        const e = DOC.view && DOC.view.expanded;
+        return !!e && e.indexOf(dir) >= 0;
     }
-    function toggleDirCollapsed(dir) {
+    function toggleDirExpanded(dir) {
         const clean = !archiveDirty();   // 先取：改完 view 就取不到了
         const v = viewOf();
-        if (!Array.isArray(v.collapsed)) v.collapsed = [];
-        const i = v.collapsed.indexOf(dir);
-        if (i >= 0) v.collapsed.splice(i, 1); else v.collapsed.push(dir);
-        applyDirCollapse();
-        viewAutoSave(clean);             // 收起状态也进存档（与暂停名单同一条路）
+        if (!Array.isArray(v.expanded)) v.expanded = [];
+        const i = v.expanded.indexOf(dir);
+        if (i >= 0) v.expanded.splice(i, 1); else v.expanded.push(dir);
+        applyDirExpand();
+        viewAutoSave(clean);             // 展开状态也进存档（与暂停名单同一条路）
     }
-    function applyDirCollapse() {
+    function applyDirExpand() {
         for (const [dir, g] of dirGroups) {
-            const on = isDirCollapsed(dir);
-            g.box.classList.toggle('collapsed', on);
-            g.caret.textContent = on ? '▸' : '▾';
-            g.caret.title = on ? `展开 ${dir}` : `收起 ${dir}`;
+            const open = isDirExpanded(dir);
+            g.box.classList.toggle('collapsed', !open);
+            g.caret.textContent = open ? '▾' : '▸';
+            g.caret.title = open ? `收起 ${dir}` : `展开 ${dir}`;
         }
     }
-    function treeFileRow(file, label, cls, box) {
+    // ---------- 树里的多选：Shift = 范围，Ctrl/Cmd = 加/减，Ctrl+A = 全选，Esc = 清空 ----------
+    // treeSel 与 OPEN.file（当前打开的视图）解耦：普通单击 = 打开并单选；带修饰键的单击只改选择，不切视图。
+    function visibleTreeFiles() {        // 当前真正看得见的行（收起目录里的行 offsetParent 为 null）
+        const out = [];
+        for (const [file, n] of treeFileNodes) if (n.row.offsetParent !== null) out.push(file);
+        return out;
+    }
+    function setTreeSel(files) {
+        treeSel.clear();
+        for (const f of files) treeSel.add(f);
+        syncTreeFiles();
+    }
+    function toggleTreeSel(file) {
+        if (treeSel.has(file)) treeSel.delete(file); else treeSel.add(file);
+        treeAnchor = file;
+        syncTreeFiles();
+    }
+    function selectTreeRange(file) {
+        const vis = visibleTreeFiles();
+        const a = vis.indexOf(treeAnchor), b = vis.indexOf(file);
+        if (a < 0 || b < 0) { setTreeSel([file]); treeAnchor = file; return; }
+        setTreeSel(vis.slice(Math.min(a, b), Math.max(a, b) + 1));   // 锚点不动：可以接着 Shift 扩 / 缩范围
+    }
+    function treeSelPaths() { return [...treeSel]; }
+    function treeFileRow(file, label, cls, box, expandable) {
         const row = document.createElement('div');
         row.className = 'tnode ' + cls;
         const isDir = cls === 'dir';
+        const canExpand = isDir && expandable !== false;   // 空目录没有内容可展开 → 不给三角、不绑双击
         if (isDir) {
-            const caret = document.createElement('span');
-            caret.className = 'caret';
-            caret.textContent = '▾';
-            caret.addEventListener('click', (ev) => { ev.stopPropagation(); toggleDirCollapsed(file); });
-            row.appendChild(caret);
-            if (box) dirGroups.set(file, { box, caret });
+            if (canExpand) {
+                const caret = document.createElement('span');
+                caret.className = 'caret';
+                caret.textContent = '▸';   // 默认收起；建树后 applyDirExpand 按存档里的展开清单修正
+                caret.addEventListener('click', (ev) => { ev.stopPropagation(); if (ev.detail > 1) return; toggleDirExpanded(file); });
+                caret.addEventListener('dblclick', (ev) => ev.stopPropagation());   // 双击三角不冒泡成"整行双击"
+                row.appendChild(caret);
+                if (box) dirGroups.set(file, { box, caret });
+            } else {
+                const pad = document.createElement('span');   // 占位：让目录名与其它行对齐，但不可点
+                pad.className = 'caret void';
+                row.appendChild(pad);
+            }
         }
-        const to = document.createElement('span'); to.className = 'to'; to.textContent = isDir ? '📁' : '📄';
+        const to = document.createElement('span');
+        to.className = 'to';
+        to.textContent = isDir ? '📁' : (isCmpvFile(file) ? '⇄' : '📄');   // ⇄ = 对比视图
         const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = label;
         row.append(to, tn);
         row.tabIndex = 0;
         row.title = isDir
-            ? file + '\n打开这个目录的列表视图（dsplistview）；点三角只展开/收起'
-            : file + '：打开这一条的链路视图（dspview）';
-        row.addEventListener('click', () => {
-            if (isDir && isDirCollapsed(file)) toggleDirCollapsed(file);   // 打开了就顺手展开
+            ? file + (canExpand ? '\n单击：打开这个目录的列表视图；双击（或点三角）：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
+            : file + '\n单击：打开这一条的链路视图；Shift 单击 = 范围选择，Ctrl 单击 = 加选';
+        row.addEventListener('click', (ev) => {
+            if (ev.detail > 1) return;      // 双击的第二击：不重复导航，交给下面的 dblclick
+            if (ev.shiftKey) { selectTreeRange(file); return; }               // Shift = 范围选择（不切视图）
+            if (ev.ctrlKey || ev.metaKey) { toggleTreeSel(file); return; }    // Ctrl/Cmd = 加选 / 减选
+            setTreeSel([file]);             // 普通单击：单选
+            treeAnchor = file;
             open({ file });
         });
+        // 双击目录行 = 展开 / 收起；单击留给"打开列表视图"，不再顺带展开
+        if (canExpand) row.addEventListener('dblclick', (ev) => { ev.preventDefault(); toggleDirExpanded(file); });
         row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open({ file }); } });
         row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openFileMenu(row, file); });
         treeFileNodes.set(file, { row, tn });
         return row;
     }
     // 一个树节点 → 一行：文件节点直接一行；目录节点 = 目录行 + .kids 内容容器（递归子节点）。
+    // 空目录（没有子目录也没有 .json）不建内容容器，也就没有展开/收起可言。
     // 只读目录（非「我的图」）下的文件行压暗一档（.tpl），提示"要改就克隆一份"。
     function buildTreeNode(nd) {
         if (nd.kind === 'file') {
-            const it = itemOf(nd.path);
-            const label = (it && (it.title || it.name)) || nd.title || nd.name;
-            return treeFileRow(nd.path, label, 'file' + (isDspFile(nd.path) ? '' : ' tpl'));
+            // 树里一律显示文件名（不带 title）：标题是内容属性，改名不该让树行跟着变
+            return treeFileRow(nd.path, nd.name, 'file' + (isDspFile(nd.path) ? '' : ' tpl'));
         }
         const box = document.createElement('div');
         box.className = 'grp';
-        box.appendChild(treeFileRow(nd.path, dirLabel(nd.path), 'dir', box));
-        const kids = document.createElement('div');
-        kids.className = 'kids';
-        if (!nd.children || !nd.children.length) {
-            const em = document.createElement('div'); em.className = 'empty'; em.textContent = '（空）';
-            kids.appendChild(em);
-        } else {
-            for (const c of nd.children) kids.appendChild(buildTreeNode(c));
+        const children = nd.children || [];
+        box.appendChild(treeFileRow(nd.path, dirLabel(nd.path), 'dir', box, children.length > 0));
+        if (children.length) {
+            const kids = document.createElement('div');
+            kids.className = 'kids';
+            for (const c of children) kids.appendChild(buildTreeNode(c));
+            box.appendChild(kids);
         }
-        box.appendChild(kids);
         return box;
     }
-    // 选中态 + 文件行的标题（标题可改，改名后树要跟着变）
+    // 选中态：由 treeSel 决定（打开某条时 open() 会把它并进选择；Shift/Ctrl 可多选）
     function syncTreeFiles() {
-        for (const [file, n] of treeFileNodes) {
-            n.row.classList.toggle('sel', file === OPEN.file);
-            const it = itemOf(file);
-            if (it && n.tn.textContent !== (it.title || it.name)) n.tn.textContent = it.title || it.name;
-        }
+        for (const [file, n] of treeFileNodes) n.row.classList.toggle('sel', treeSel.has(file));
     }
-    // ---------- 右键菜单：模板与「我的图」两种菜单 ----------
+    // 树内的键盘多选：Ctrl/Cmd+A 全选（只选看得见的行）、Esc 清空（菜单开着时 Esc 先关菜单）
+    treeEl.addEventListener('keydown', (ev) => {
+        if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'a' || ev.key === 'A')) {
+            ev.preventDefault();
+            setTreeSel(visibleTreeFiles());
+        } else if (ev.key === 'Escape' && menuEl.hidden) {
+            setTreeSel([]);
+        }
+    });
+    // ---------- 右键菜单（文件 / 目录行） ----------
     // 挂在 body 上：行/卡片在布局流里，浮层若作为它们的子元素会被行高/栅格布局挤压变形。
     const menuEl = document.createElement('div');
     menuEl.className = 'cmenu';
     menuEl.hidden = true;
     document.body.appendChild(menuEl);
     function closeMenu() { menuEl.hidden = true; }
-    function menuItemsFor(id) {
-        const e = entryOf(id);
-        if (!e) return [];
-        if (isTemplate(id)) {
-            const items = [['从模板新建', '把这一条模板深克隆成一份可编辑的「我的图」，并跳到它', () => newFromTemplate(id), '']];
-            if (canReset(id)) items.push(['恢复出厂', '把这一条恢复成内置出厂状态（改过的模板才有这一项）', () => resetToDefault(id), '']);
-            return items;
-        }
-        const items = [['复制', '深克隆成一份新的「我的图」，并跳到该副本；本份不动', () => cloneAsNew(id), '']];
-        items.push(['删除', '删掉这一条（连 content/My dsps/ 里的文件一起）', () => deleteChart(id), 'danger']);
-        return items;
-    }
-    function openRowMenu(anchor, id) { openMenuAt(anchor, menuItemsFor(id)); }
     // 文件行的菜单：目录行只有「打开列表」；文件行按目录给不同的动作
     //   只读文件（content/Templates/ 等）→ 从模板新建（只能克隆出自己的一条）
     //   我的图（content/My dsps/）        → 编辑 / 复制 / 删除（自己的文件，可改可删）
     function fileMenuItems(file) {
         const t = itemOf(file);
         const isDir = file.endsWith('/');
-        const items = [[isDir ? '打开列表' : '预览DSP',
-            isDir ? file + ' 的列表视图（dsplistview）' : `打开 ${file} 的链路视图（dspview）`,
+        const cmpv = isCmpvFile(file);
+        // 多选状态（Shift / Ctrl）下右键其中任意一行 → 给整批的动作
+        if (!isDir && treeSel.size > 1 && treeSel.has(file)) {
+            const paths = treeSelPaths();
+            const ids = paths.filter(isDspFile).map(stemOf);
+            const dspPaths = paths.filter((f) => f.endsWith('.json'));
+            const batch = [];
+            if (dspPaths.length >= 2) batch.push([`创建对比视图（${dspPaths.length} 项）`, '把这些 DSP 写进 content/Compares/ 下的一份 .cmpv，用来并排对比', () => createCompare(dspPaths), '']);
+            if (ids.length) batch.push([`删除选中的 ${ids.length} 条`, '把这些「我的图」连同 content/My dsps/ 下的文件一起删掉', () => deleteCharts(ids), 'danger']);
+            if (batch.length) return batch;
+        }
+        const items = [[isDir ? '打开列表' : (cmpv ? '打开对比' : '预览DSP'),
+            isDir ? file + ' 的列表视图（dsplistview）'
+                : (cmpv ? `打开 ${file}（卡片列表对比）` : `打开 ${file} 的链路视图（dspview）`),
             () => open({ file }), '']];
         if (!t || isDir) return items;
+        if (cmpv) {
+            items.push(['删除', '删掉这份对比视图（不动被引用的 DSP 文件）', () => deleteCmpv(file), 'danger']);
+            return items;
+        }
         if (isDspFile(file)) {
             const id = stemOf(file);
             items.push(['编辑', '在右栏编辑器里改标题 / 说明 / 级联', () => { if (entryOf(id)) selectChart(id); }, '']);
@@ -1406,19 +1346,7 @@
     window.addEventListener('click', (ev) => { if (!menuEl.hidden && !menuEl.contains(ev.target)) closeMenu(); });
     window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenu(); });
     window.addEventListener('resize', closeMenu);
-    // 整块重建网格 + 文件树：增删格 / 复制 / 载入新文档会改 DOC 的格数与顺序，序号按位置算，必须重排。
-    // 只摘 cellCharts 里的格子，右栏输出图与逐级卡继续留在 charts 里（它们的 DOM 不在 grid 内）。
-    // 实验台（LAB_ID）也是普通一格（模板）：右栏现在是纯编辑器，"自由探索"既然是 DOC 里的一条，就该能被点到、能新建副本。
-    function buildGrid() {
-        grid.innerHTML = '';
-        for (const ch of cellCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
-        cellCharts.length = 0;
-        cellCharts.push(buildCell(READONLY_ENTRY, 0));      // 0 号输入：所有图的共同起点，排在ListView最前
-        DOC.charts.forEach((e, i) => cellCharts.push(buildCell(e, i + 1)));
-        buildTree();
-        setGridVisible(OPEN.viewer === 'grid');   // 重建后的格子要按当前视图决定参与不参与绘制
-    }
-    function cellOf(id) { return cellCharts.find((c) => c.entry && c.entry.id === id) || null; }
+    // 结构变化（增删条目 / 载入新文档 / 刷新磁盘清单）后重建左栏树；视图面板由 renderCenter 刷新
     // ---------- 播放控制：暂停 = 冻结画面（停止 compute+draw，画布保持最后一帧） ----------
     // 暂停那一刻把画布导出 PNG 落盘到 content/Snapshots/，DOC.view.shots 里只记地址 (/api/shots/<name>.png)，
     // 并顺手存一次盘（不提交任何草稿）。载入时按 DOC.view 还原：暂停的画布不再参与绘制，并把存档里的快照画回画布。
@@ -1486,10 +1414,9 @@
         // 暂停/恢复都顺手存一次：播放状态与快照都在存档里（不提交任何草稿）
         if (!opts || !opts.silent) viewAutoSave(clean);
     }
-    // 全部暂停 = 当前视野里所有"有身份的画布"：ListView各格 + 模板视图里的各条
+    // 全部暂停 = 当前视野里所有"有身份的画布"：中间面板各条（key = 文件路径）
     function pauseKeys() {
         const out = [];
-        for (const c of cellCharts) if (c.entry) out.push(c.entry.id);
         for (const ch of viewCharts) if (ch.file) out.push(ch.file);
         return out;
     }
@@ -1503,14 +1430,13 @@
         syncGlobalPlay();
         viewAutoSave(clean);
     }
-    // 播放按钮就地刷：格子把 paused 打在 .cell 上，模板条目打在自己的卡片上（共用 .paused 的压暗样式）
+    // 播放按钮就地刷：条目把 paused 打在自己的卡片上（共用 .paused 的压暗样式）
     function renderPlayBtn(ch) {
         if (!ch.playBtn) return;
         const on = isPaused(keyOf(ch));
         ch.playBtn.textContent = on ? '▶' : '⏸';
         ch.playBtn.title = on ? '继续播放（快照会一起清掉）' : '暂停（画面停住，并存一张快照到存档）';
-        const box = ch.cell || ch.card;
-        if (box) box.classList.toggle('paused', on);
+        if (ch.card) ch.card.classList.toggle('paused', on);
     }
     // 载入 / adoptDoc 之后：把暂停状态贴到各块画布上，并把存档里的快照画回来
     function applyView() {
@@ -1530,15 +1456,13 @@
         b.textContent = all ? '▶ 全部播放' : '⏸ 全部暂停';
         b.title = all ? '恢复所有画布播放' : '暂停所有画布（各存一张快照到存档）';
     }
-    buildGrid();
-
     // 全局参数：平坦度时间窗（影响所有图的数据源 sfmLines）
     const gState = {};
     buildParams(document.getElementById('globalBar'),
         [{ key: 'win', label: '平坦窗(秒)', type: 'range', min: 0.02, max: 1, step: 0.02, def: 0.2, dst: gState }],
         () => { sfmWinK = Math.max(1, Math.round(gState.win * CHART_HZ)); });
 
-    // ---------- 级联存档的清洗（供文档模型 sanitizeDoc / defaultLabEntry 调用） ----------
+    // ---------- 级联存档的清洗（供文档模型 sanitizeDoc / defaultScratchEntry 调用） ----------
     // 存的是纯数据（id/on/p），非法 id 与越界参数在这里就地纠正。
     // 判存在必须用 hasOwnProperty：OPS 是普通对象，OPS['__proto__'] 会沿原型链拿到 Object.prototype（truthy），
     // 用真值判断会让脏存档里的 '__proto__'/'constructor' 混进来，随后取 .params 抛错、白屏。
@@ -1561,15 +1485,6 @@
         }
         return out;
     }
-    // 反相曾经写死在管道里（旧版每条链都隐含 1-v），现在是可选算子。
-    // 旧存档里不可能有 inv 这一级，补在最前面以保持原语义；幂等（已有就不再补）。
-    // 空链例外：那只能是用户主动清空的结果（清空按钮在 inv 出现之前也存在），
-    // 补一级等于推翻用户的操作，所以原样尊重。
-    function ensureInv(list) {
-        if (!list.length) return list;
-        if (!list.some((s) => s.id === 'inv')) list.unshift({ id: 'inv', on: true, p: {}, collapsed: true });
-        return list;
-    }
     // 收起态缺省：只展开末级，其余中间级全部收起。已有明确布尔值的一律沿用（尊重用户改过的）。
     // 输入级(k=0)不属于"级"，它的收起态不落盘、随会话保留在卡片 class 上。
     function labDefaultCollapse(list) {
@@ -1578,15 +1493,14 @@
         return list;
     }
 
-    // ---------- 右栏编辑器：每格一份关联草稿，保存才写回左格 ----------
-    // 关键约定：右栏碰的对象永远不是 DOC 里的那一份。
-    //   drafts   id → { d: 该格的深拷贝, base: 克隆那一刻 DOC 的快照 JSON }。按需建、切换不清，
-    //            所以可以在 ② 和 ③ 之间来回切，两边的改动各自留着（各自都有 ✎ 角标）
-    //   DRAFT    只是"当前选中格那一份草稿"的引用，省得逐级卡/输入框到处按 id 取
-    // 「保存」= 一次性把所有草稿深拷贝回各自 DOC 格 + 落盘；右上 ✕ = 关掉当前这一格（脏的先问保存/丢弃/取消）。
-    // 与网格各图共用 OPS / computeChart / buildParams，同一条执行路径 —— 右栏只是"换了个编辑入口"。
-    // 左格参数条走另一条路：直接写 DOC（成品可就地调参、实时生效）。有未保存草稿的格子会把参数条锁掉
-    //（见 renderCell），同一个参数不会被两边各写一次。
+    // ---------- 右栏编辑器 dspEditorView：一份关联草稿，保存才写回 ----------
+    // 编辑目标有两种：
+    //   · 「我的图」（content/My dsps/<id>.json）—— 草稿按 id 存在 drafts 里，保存后写回 DOC + 落盘文件
+    //   · 自由探索草稿（SCRATCH_ID）—— 不落盘；按「保存」会另存为一条新的「我的图」
+    // drafts  id → { d: 目标深拷贝, base: 克隆那一刻的快照 JSON }。按需建、切换不清，改动各自留着。
+    // DRAFT   只是"当前目标那一份草稿"的引用，省得逐级卡/输入框到处按 id 取。
+    // 「保存」= 把草稿深拷贝回各自 DOC 条目 + 落盘；右上 ✕ = 关掉当前编辑（脏的先问保存/丢弃/取消）。
+    // 与中间面板共用 OPS / computeChart / buildParams，同一条执行路径 —— 右栏只是"另一个编辑入口"。
     const labEl = document.getElementById('lab');
     const labPipeEl = document.getElementById('labPipe');
     const labTitleEl = document.getElementById('labTitle');
@@ -1596,11 +1510,49 @@
     const labRoHintEl = document.getElementById('labRoHint');
     const labCloseEl = document.getElementById('labClose');
     const labSaveEl = document.getElementById('labSave');
-    const dlg = document.getElementById('closeDlg');
-    const dlgTitleEl = document.getElementById('dlgTitle');
-    const dlgBodyEl = document.getElementById('dlgBody');
-    function entryOf(id) { return DOC.charts.find((c) => c.id === id) || (id === INPUT_ID ? READONLY_ENTRY : null); }
-    function ordOf(id) { return isReadonly(id) ? '原' : ordLabel(Math.max(0, DOC.charts.findIndex((c) => c.id === id)) + 1); }
+    // ---- 自绘模态：ask({ title, body, buttons:[{ text, cls, value }] }) → Promise<value>
+    // 一律走页面自己的遮罩 + 面板，不用浏览器原生 dialog / alert / confirm；点遮罩或 Esc = 取消（resolve undefined）
+    const modalEl = document.getElementById('modal');
+    const modalTitleEl = document.getElementById('modalTitle');
+    const modalBodyEl = document.getElementById('modalBody');
+    const modalFootEl = document.getElementById('modalFoot');
+    let modalDone = null;
+    function closeModal(value) {
+        if (!modalDone) return;
+        const done = modalDone;
+        modalDone = null;
+        modalEl.hidden = true;
+        done(value);
+    }
+    function ask(opts) {
+        return new Promise((resolve) => {
+            modalTitleEl.textContent = opts.title || '';
+            modalBodyEl.textContent = opts.body || '';
+            modalBodyEl.hidden = !opts.body;
+            modalFootEl.textContent = '';
+            for (const b of (opts.buttons || [])) {
+                const el = document.createElement('button');
+                el.type = 'button';
+                el.className = 'lbtn' + (b.cls ? ' ' + b.cls : '');
+                el.textContent = b.text;
+                el.addEventListener('click', () => closeModal(b.value));
+                modalFootEl.appendChild(el);
+            }
+            modalDone = resolve;
+            modalEl.hidden = false;
+            const focus = modalFootEl.querySelector('button.primary') || modalFootEl.lastElementChild;
+            if (focus) focus.focus();
+        });
+    }
+    modalEl.addEventListener('click', (ev) => { if (ev.target === modalEl) closeModal(undefined); });   // 点遮罩 = 取消
+    window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !modalEl.hidden) closeModal(undefined); });
+    // SCRATCH：自由探索草稿（dspEditorView 的默认内容）—— 不是 DOC 条目、不落盘
+    const SCRATCH = defaultScratchEntry();
+    function entryOf(id) {
+        if (id === SCRATCH_ID) return SCRATCH;
+        return DOC.charts.find((c) => c.id === id) || null;
+    }
+    function ordOf(id) { return id === SCRATCH_ID ? '自由' : id; }   // 直接显示文件名（id）
     function archiveDirty() { return entryDocJson(DOC) !== lastSaved; }   // 成品侧：参数调参 / 增删格还没存进服务端
     function pendingIds() { const out = []; for (const id of drafts.keys()) if (draftDirty(id)) out.push(id); return out; }
     // 未保存提示按格归属：只报"当前这一格"的草稿状态。
@@ -1608,134 +1560,111 @@
     // 别的格的待写回状态各有各的位置：卡片上是 ✎、树上是 ✎；右栏在空态时补一句"N 格待写回"当提醒。
     // 成品侧（卡片调参 / 增删格，内存里已生效但磁盘上没有）单独用"未落盘"区分开。
     function refreshDirty() {
-        const ro = !!selected && isLocked(selected);
-        const mine = !!selected && !ro && draftDirty(selected);
+        const mine = !!selected && draftDirty(selected);
         const others = pendingIds().filter((id) => id !== selected);
         const n = pendingIds().length;
         const unsaved = entryDocJson(DOC) !== lastSaved;      // 成品侧没存进服务端（草稿不算：那是"未保存"）
         labDirtyEl.textContent = storeState === 'error' ? '存盘失败'
             : storeState === 'offline' ? '离线'
             : saving ? '保存中…'
-            : !selected ? (n ? `${n} 格待写回` : (unsaved ? '未落盘' : ''))
+            : !selected ? (n ? `${n} 处待写回` : (unsaved ? '未落盘' : ''))
             : mine ? `${ordOf(selected)} 未保存` : (unsaved ? '未落盘' : '');
         labDirtyEl.hidden = !labDirtyEl.textContent;
         labDirtyEl.title = storeMsg || (mine && others.length
-            ? `另有 ${others.length} 格待写回：${others.map(ordOf).join(' ')}（点那些格子上带 ✎ 的格子继续处理）`
-            : (!selected && n ? '点左侧格子上带 ✎ 的那格继续处理' : ''));
+            ? `另有 ${others.length} 处待写回：${others.map(ordOf).join(' ')}`
+            : (!selected && n ? '还有未写回的草稿' : ''));
         labCloseEl.hidden = !selected;        // 空态没有"正在编辑的东西"可关
-        labSaveEl.hidden = ro;               // 模板/只读格没有草稿可写回，也就不给保存
-        for (const ch of cellCharts) {       // 各格 ✎ 角标跟随草稿状态（在右栏改草稿时卡片没重渲染过）
-            if (ch.entry) ch.pmarkEl.style.display = !ch.ro && draftDirty(ch.entry.id) ? '' : 'none';
-        }
-        syncTreeFiles();                     // 树上文件行的选中态 / 标题也跟着刷（它不随 buildGrid 重建）
+        labSaveEl.hidden = false;             // 自由探索也允许保存（= 另存为我的图）
+        syncTreeFiles();                     // 树上文件行的选中态也跟着刷
     }
-    // 草稿 → 输入框。正在输入的那一格跳过，避免打字时被回写打断
+    // 草稿 → 输入框。正在输入的那个框跳过，避免打字时被回写打断
     function syncEditorInputs() {
         if (!DRAFT) return;
-        const ro = isLocked(DRAFT.id);        // 模板/只读格：文本仍可选中复制，但改不了
         labOrdEl.textContent = ordOf(DRAFT.id);
-        labTitleEl.readOnly = ro;
-        labDescEl.readOnly = ro;
+        labTitleEl.readOnly = false;
+        labDescEl.readOnly = false;
         if (document.activeElement !== labTitleEl) labTitleEl.value = DRAFT.title;
         if (document.activeElement !== labDescEl) labDescEl.value = DRAFT.desc;
     }
-    // 点格子即开始编辑。每格的草稿存在 drafts 里，切走切回都不丢
+    // 把某一格交给右栏编辑（文件行的「编辑」菜单 / dspview 的「✎ 编辑」按钮）。草稿存在 drafts 里，切走切回都不丢
     function selectChart(id) {
         if (id === selected || !entryOf(id)) return;
         const clean = !archiveDirty();   // 必须先取：改 openedTabs 本身就会让 DOC 与基线不等
         selected = id;
-        viewOf().openedTabs = [id];      // 右栏当前开着哪个标签，跟着存档走
+        viewOf().openedTabs = id === SCRATCH_ID ? [] : [id];   // 自由草稿不进存档的标签
         bindDraft();
-        for (const ch of cellCharts) renderCell(ch);      // 刷新各格的 ✎ 角标 / 参数条锁
         syncEditorInputs();
         labSync(true);
+        refreshDirty();
         viewAutoSave(clean);
     }
     // 视图状态（暂停 / 快照 / 开着的标签）就在 DOC 里，这类改动本身也算"未落盘"。
     // 成品侧此刻没有别的待落盘改动时顺手写盘；有的话留着 —— 不能替用户把待保存的删格/调参一起交了。
     function viewAutoSave(clean) { if (clean) saveDoc(false); }
     // 关闭当前编辑 = 关掉这个"标签"。有未保存先问，语义照搬 VSCode 关标签：保存 / 丢弃 / 取消
-    function closeEditor() {
+    async function closeEditor() {
         if (!selected) return;
         if (!draftDirty(selected)) { commitClose(); return; }
-        dlgTitleEl.textContent = `${ordOf(selected)} 未保存`;
-        dlgBodyEl.textContent = `「${DRAFT.title}」还有没保存的改动。\n保存 = 写回左格并落盘；丢弃 = 只丢掉这一格的草稿，左格不动。`
-            + (archiveDirty() ? '\n另外成品侧还有改动没落盘（参数调整 / 增删格），保存会一并写盘。' : '');
-        dlg.showModal();
+        const pick = await ask({
+            title: `${ordOf(selected)} 未保存`,
+            body: `「${DRAFT.title}」还有没保存的改动。\n保存 = 写回并落盘（自由探索会另存为一条「我的图」）；丢弃 = 只丢掉这份草稿。`
+                + (archiveDirty() ? '\n另外还有改动没落盘（参数调整 / 增删图），保存会一并写盘。' : ''),
+            buttons: [
+                { text: '保存并关闭', cls: 'primary', value: 'save' },
+                { text: '丢弃改动', value: 'drop' },
+                { text: '取消', value: '' },
+            ],
+        });
+        if (pick === 'save') { await saveDoc(); commitClose(); }
+        else if (pick === 'drop') { drafts.delete(selected); commitClose(); }
     }
     function commitClose() {
         const clean = !archiveDirty();
         selected = '';
         viewOf().openedTabs = [];        // 关掉了，存档里也不留
         bindDraft();                 // → null，右栏回到空态
-        for (const ch of cellCharts) renderCell(ch);
         syncEditorInputs();
         labSync(true);
         viewAutoSave(clean);
     }
-    // 提交：把所有待写回的草稿一次性深拷贝回各自 DOC 格（左格此刻才变），再整份存到服务端。
-    // 存盘失败不吞：lastSaved 保持旧值 → 状态位继续报"未落盘"，并把原因挂在 title 上。
+    // 提交：把待写回的草稿深拷贝回各自 DOC 条目，再整份存到服务端。
+    // 自由探索草稿先另存为一条「我的图」（会建文件并跳到它）。存盘失败不吞：lastSaved 保持旧值 → 状态位继续报"未落盘"。
     async function saveDoc(commitDrafts) {
-        const commit = commitDrafts !== false;      // 播放控制触发的存盘只写视图状态，不动右栏的草稿
+        const commit = commitDrafts !== false;      // 播放控制触发的存盘只写视图状态，不动草稿
         if (commit) {
+            if (drafts.has(SCRATCH_ID)) {           // 自由探索 → 另存为一条「我的图」
+                const r = drafts.get(SCRATCH_ID);
+                drafts.delete(SCRATCH_ID);
+                addUserChart({ title: r.d.title, desc: r.d.desc, stages: r.d.stages.map(cloneStage) });
+            }
             for (const [id, r] of drafts) {
                 const e = entryOf(id);
-                if (!e || isLocked(id)) continue;              // 格子被删了 / 模板只读，没有草稿可写回
+                if (!e) continue;                   // 条目已被删 → 没有可写回的地方
                 e.title = r.d.title.trim().slice(0, 60) || '未命名';
                 e.desc = r.d.desc.slice(0, 400);
                 e.stages = r.d.stages.slice(0, MAX_STAGES).map(cloneStage);
             }
             drafts.clear();                                // 写回后草稿与成品同形，没必要留着
             bindDraft();
-            for (const ch of cellCharts) renderCell(ch);   // 标题 / 管道摘要 / 参数条（按新算子重建）
             syncEditorInputs(); labSync(true);
         }
         const prev = lastSaved;
         lastSaved = entryDocJson(DOC);                     // 先乐观置为已存：界面立刻干净
         refreshDirty();
         const ok = await saveDocToServer(DOC, !commit);     // 只写视图的后台存盘，不亮"保存中…"
-        // 我的图各写各的文件：DOC 整份写一份，content/My dsps/ 里每条再各写一份（内容同源）
-        if (ok && commit) await saveAllDspFiles();
+        if (ok && commit) await saveAllDspFiles();          // 我的图各写各的文件（内容同源）
         lastSaved = ok ? entryDocJson(DOC) : prev;         // 失败就把基线退回去，状态位重新亮起来
         refreshDirty();
     }
-    // 恢复出厂（成品侧操作，立即生效）：回到"出厂来源"那一份快照 ——
-    //   模板 → 它自己的内置出厂状态（只有内置 ①–⑧ 有快照，实验台/输入没有）
-    //   「我的图」 → 它 from 指向的那个模板（从模板新建时记下的）
-    // 这一格的草稿一起丢掉：它本来就是"改这一格"，改回出厂后没什么可保留的
-    function resetToDefault(id) {
-        const e = entryOf(id);
-        const p = e && originPristine(e);
-        if (!e || !p) return;
-        e.title = p.title; e.desc = p.desc;
-        e.stages = p.stages.map(cloneStage);
-        drafts.delete(id);
-        if (id === selected) bindDraft();
-        const ch = cellOf(id);
-        if (ch) renderCell(ch);
-        syncEditorInputs(); labSync(true); refreshDirty();
-    }
-    // id = 文件名（u1、u2…），所以要把两份清单里的名字都避开，不能只查 DOC
+    // id = 文件名（u1、u2…），所以要把磁盘清单里的名字也避开
     function newChartId() {
         let i = 1;
         const used = (id) => DOC.charts.some((c) => c.id === id) || FILES.some((it) => stemOf(it.file) === id);
         while (used('u' + i)) i++;
         return 'u' + i;
     }
-    // 新建一份「我的图」：套模板内容（可编辑）。不记 from —— 建出来就是独立一条。
-    // 标题同名就加"副本"，免得树里两行一模一样的字。
-    function newFromTemplate(tplId) {
-        const t = entryOf(tplId);
-        if (!t || !isTemplate(tplId)) return;
-        const dup = DOC.charts.some((c) => !isTemplate(c.id) && c.title === t.title);
-        addUserChart({
-            title: t.title + (dup ? ' 副本' : ''),
-            desc: t.desc,
-            stages: t.stages,
-        });
-    }
     // 复制：把来源深克隆一份成新的「我的图」，并跳到该副本接着编辑。来源那一份不动。
-    // srcId 缺省 = 用当前草稿（"把右栏这条链固化成一张图"）。
+    // srcId 缺省 = 用当前草稿（"把右栏这条链固化成一张图"）；自由探索草稿也能这样固化。
     function cloneAsNew(srcId) {
         const src = srcId ? entryOf(srcId) : DRAFT;
         if (!src) return;
@@ -1745,39 +1674,68 @@
             stages: src.stages,
         });
     }
-    // 落一份新的我的图：插在实验台之前（ListView里按新建顺序排），深克隆 → 与来源没有任何共享引用。
+    // 落一份新的我的图：深克隆 → 与来源没有任何共享引用。
     // 同步在 content/My dsps/<id>.json 建文件；文件建好后跳到那一条（新建完总得看到它）。
     function addUserChart(spec) {
         const id = newChartId();
         const e = { id, title: spec.title, desc: spec.desc, stages: spec.stages.map(cloneStage) };
-        const at = DOC.charts.findIndex((c) => c.id === LAB_ID);
-        DOC.charts.splice(at < 0 ? DOC.charts.length : at, 0, e);
+        DOC.charts.push(e);
         selectChart(e.id);
-        buildGrid(); labSync(true); refreshDirty();
+        labSync(true); refreshDirty();
         postDsp('/api/dsps', 'POST', { name: id, title: e.title, desc: e.desc, stages: e.stages })
             .then((b) => {
                 if (!b || !b.item) return;                 // 建文件失败：内存里这一条还在，提示已经在状态位上
-                upsertDspItem(b.item);
+                upsertItem(b.item);
                 open({ file: b.item.file });               // 文件就位了再跳，避免视图去取一个还没落盘的文件
             });
         return e;
     }
     // 删除：从 DOC 摘掉 + 删掉它的文件。文件删掉就是删掉，没有"刷新恢复"这回事了。
-    function deleteChart(id) {
+    async function deleteChart(id) {
+        const e = DOC.charts.find((c) => c.id === id);
+        if (!e) return;
+        const lostDraft = draftDirty(id) ? '\n（这一条还有未保存的草稿，会一起丢掉）' : '';
+        const ok = await ask({
+            title: `删除「${e.title}」？`,
+            body: `会连 content/My dsps/${id}.json 一起删掉。` + lostDraft,
+            buttons: [
+                { text: '删除', cls: 'danger', value: true },
+                { text: '取消', value: false },
+            ],
+        });
+        if (!ok) return;
+        removeChart(id);
+        if (lostDraft) await ask({ title: '已删除', body: '该条未保存的草稿一并丢弃' + lostDraft, buttons: [{ text: '知道了', cls: 'primary', value: true }] });
+    }
+    // 批量删除（树里多选后走这条）：只弹一次确认，逐条 removeChart，最后清空选择
+    async function deleteCharts(ids) {
+        const list = ids.filter((id) => DOC.charts.some((c) => c.id === id));
+        if (!list.length) return;
+        const ok = await ask({
+            title: `删除选中的 ${list.length} 条？`,
+            body: '会连 content/My dsps/ 下对应的 .json 一起删掉，未保存的草稿也一并丢弃。',
+            buttons: [
+                { text: '删除', cls: 'danger', value: true },
+                { text: '取消', value: false },
+            ],
+        });
+        if (!ok) return;
+        for (const id of list) removeChart(id);
+        setTreeSel([]);              // 选中的都删了 → 清空选择
+    }
+    // 真正执行删除（不弹窗）：从 DOC / 磁盘清单摘掉、删掉文件、必要时退回列表
+    function removeChart(id) {
         const i = DOC.charts.findIndex((c) => c.id === id);
         if (i < 0) return;
-        if (!confirm(`删除「${DOC.charts[i].title}」？\n会连 content/My dsps/${id}.json 一起删掉。`)) return;
-        const lostDraft = draftDirty(id) ? '\n（这一条还有未保存的草稿，会一起丢掉）' : '';
         DOC.charts.splice(i, 1);
         drafts.delete(id);
         const fi = FILES.findIndex((it) => stemOf(it.file) === id);
         if (fi >= 0) FILES.splice(fi, 1);
-        if (id === selected) commitClose();   // 删的就是正在编辑的那条 → 右栏直接空态（VSCode 关标签）
-        buildGrid();
-        syncEditorInputs(); labSync(true); refreshDirty();
-        postDsp('/api/dsps/' + encodeURIComponent(id + '.json'), 'DELETE').then(() => buildTree());
+        if (id === selected) commitClose();   // 删的就是正在编辑的那条 → 右栏直接空态
         if (OPEN.file === DIR_DSP + id + '.json') open({ file: DIR_DSP });   // 正开着它 → 退回列表
-        if (lostDraft) alert('已删除，该条未保存的草稿一并丢弃' + lostDraft.trim());
+        postDsp('/api/dsps/' + encodeURIComponent(id + '.json'), 'DELETE');
+        buildTree();
+        syncEditorInputs(); labSync(true); refreshDirty();
     }
     // 备好第一份草稿：右栏所有画布（输出图 / 逐级卡）都从 DRAFT 取数据，必须早于它们建对象
     bindDraft();
@@ -1809,7 +1767,7 @@
         const host = document.getElementById('labCharts');
         host.innerHTML = '';
         const last = S.length;                  // 末级索引 = 最后一张图
-        // 只画第 1..N 级（输入是 grid 的 0 号格，不在这里重复出图）
+        // 只画第 1..N 级（第 0 级是原始输入，不在这里重复出图）
         for (let k = 1; k <= last; k++) {
             const st = S[k - 1];
             const collapsed = !!st.collapsed;    // 缺省见 labDefaultCollapse：只展开末级
@@ -1939,12 +1897,9 @@
     // 唯一的编辑收口：空态切换 + 刷管道摘要 + 刷"未保存" + 重建或只刷标签
     function labSync(rebuild) {
         labEl.classList.toggle('idle', !DRAFT);
-        labEl.classList.toggle('ro', !!(DRAFT && isLocked(DRAFT.id)));   // 只读态：模板/输入格 —— 不给保存、不给级联编排
-        if (DRAFT && isLocked(DRAFT.id)) {
-            labRoHintEl.textContent = isReadonly(DRAFT.id)
-                ? '0 号输入：原始 SFM，只读（原始量本身没有可改字段）。反相 1-v 是各图自己挑的可选算子。'
-                : '模板（非用户创建）：只读。要改成你自己的图 → 在左栏这一行上右键「从模板新建」一份副本。';
-        }
+        // 自由探索草稿：提示它不落盘（按「保存」会另存为一条「我的图」）
+        labRoHintEl.textContent = DRAFT && DRAFT.id === SCRATCH_ID
+            ? '自由探索：临时链，不落盘 —— 按「保存」会另存为一条「我的图」。' : '';
         labPipeEl.textContent = DRAFT ? pipeSummary({ stages: DRAFT.stages }) : '';
         labOut.hidden = !DRAFT;               // 空态时画布不参与绘制（display:none 画了也白画）
         refreshDirty();
@@ -1952,20 +1907,21 @@
         else labelLabCharts();
     }
 
-    // ---- 工具条接线（全部写草稿；左格要等「保存」才动） ----
+    // ---- 工具条接线（全部写草稿；写回磁盘要等「保存」） ----
     labTitleEl.addEventListener('input', () => {
-        if (!DRAFT || isLocked(DRAFT.id)) return;      // 模板/只读格：输入框本就不可编辑，这里再挡一次（防粘贴/程序化赋值）
+        if (!DRAFT) return;
         DRAFT.title = labTitleEl.value.slice(0, 60);
-        refreshDirty();                       // 左格标题不动 —— 保存时才写回
+        refreshDirty();                       // 卡片标题不动 —— 保存时才写回
     });
     labDescEl.addEventListener('input', () => {
-        if (!DRAFT || isLocked(DRAFT.id)) return;
+        if (!DRAFT) return;
         DRAFT.desc = labDescEl.value.slice(0, 400);
         refreshDirty();
     });
     document.getElementById('labSave').addEventListener('click', saveDoc);
+    document.getElementById('labScratch').addEventListener('click', () => selectChart(SCRATCH_ID));
     document.getElementById('labAdd').addEventListener('click', () => {
-        if (!DRAFT || isLocked(DRAFT.id)) return;
+        if (!DRAFT) return;
         const S = DRAFT.stages;
         if (S.length >= MAX_STAGES) return;               // 12 音级 × 250 点，8 级已远超需要
         const pick = S.length ? S[S.length - 1].id : 'pow';
@@ -1973,14 +1929,11 @@
         S.push({ id: pick, on: true, p: {}, collapsed: S.length !== 0 });
         labSync(true);
     });
-    document.getElementById('labClear').addEventListener('click', () => { if (DRAFT && !isLocked(DRAFT.id)) { DRAFT.stages.length = 0; labSync(true); } });
-    // 关闭：干净就直接关，脏的先弹 dialog（原生 dialog 自带 Esc = 取消、点遮罩不关）
+    document.getElementById('labClear').addEventListener('click', () => { if (DRAFT) { DRAFT.stages.length = 0; labSync(true); } });
+    // 关闭：干净就直接关，脏的先弹自绘模态（保存 / 丢弃 / 取消；点遮罩或 Esc = 取消）
     labCloseEl.addEventListener('click', closeEditor);
     // 全局播放控制
     document.getElementById('gPlay').addEventListener('click', () => setAllPaused(!allPaused()));
-    document.getElementById('dlgSave').addEventListener('click', () => { dlg.close(); saveDoc(); commitClose(); });
-    document.getElementById('dlgDrop').addEventListener('click', () => { dlg.close(); drafts.delete(selected); commitClose(); });
-    document.getElementById('dlgCancel').addEventListener('click', () => dlg.close());
     syncEditorInputs();
     rebuildLabCharts();
     labSync(true);
@@ -2078,8 +2031,8 @@
             if (ok) adoptDoc(migrate);
         }
         await loadTree();          // content/ 的目录树 + .json 清单（树 / 模板 / 我的图一次拉回）
-        mergeDspsIntoDoc();        // 文件为准 → 并进 DOC，右栏编辑器与ListView格子照旧按 id 找得到
-        renderCenter();            // 起手是ListView视图（顺带把面包屑画出来）
+        mergeDspsIntoDoc();        // 文件为准 → 并进 DOC（右栏编辑器照旧按 id 找得到）
+        renderCenter();            // 默认落在 Templates 目录列表（顺带把面包屑画出来）
         refreshDirty();
     })();
     // 调试入口：控制台里 open({ file: 'content/Templates/inv+zscore.json' }) 可直接切视图

@@ -581,12 +581,14 @@ def api_doc_get():
 
 @app.route("/api/doc", methods=["POST"])
 def api_doc_post():
-    """整份覆盖写回。前端已做清洗，这里只兜住非法 JSON 与超大体积。"""
+    """整份覆盖写回。前端已做清洗，这里只兜住非法 JSON 与超大体积。
+
+    charts 允许为空数组：DSP 实验室的内容真相已经全在 content/ 下，
+    DOC 只保留视图状态与「我的图」的内存镜像。
+    """
     body = request.get_json(silent=True)
     if not isinstance(body, dict) or not isinstance(body.get("charts"), list):
         return jsonify({"error": "请求体必须是 {charts:[...] }"}), 400
-    if not body["charts"]:
-        return jsonify({"error": "charts 为空，拒绝写入"}), 400
     tmp = DOC_PATH + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
@@ -615,15 +617,19 @@ DSP_DIR = os.path.join(CONTENT_DIR, "My dsps")
 DSP_PREFIX = "content/My dsps/"
 SHOT_DIR = os.path.join(CONTENT_DIR, "Snapshots")
 SHOT_PREFIX = "content/Snapshots/"
+CMPV_DIR = os.path.join(CONTENT_DIR, "Compares")
+CMPV_PREFIX = "content/Compares/"
+ITEM_EXTS = (".json", ".cmpv")       # 树 / 列表里认的内容文件：DSP 链 + 对比视图
 # 我的图的文件名 = 图的 id（u1、u2…）：身份稳定，改标题不必改名，也不会撞中文名/空格
 DSP_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-# 内置 id 不落"我的图"：它们是出厂内容，只在 content/ViewState/dsp-lab.json / content/Templates/ 里
+# 历史内置 id（input / lab / c1–c8）：旧文档里出现过，不该被当成"我的图"迁移成文件。
+# 新版已废弃这些内置条目（内容真相全在 content/ 下），这里只作迁移时的排除名单。
 BUILTIN_IDS = {"input", "lab"} | {f"c{i}" for i in range(1, 9)}
 
 
 def _dir_item(dirpath, prefix, name):
-    """读一个 .json 文件 → 前端用的条目；越界名 / 坏 JSON 一律当不存在。"""
-    if not name or not name.endswith(".json"):
+    """读一个内容文件（.json / .cmpv）→ 前端用的条目；越界名 / 坏文件一律当不存在。"""
+    if not name or not name.endswith(ITEM_EXTS):
         return None
     if "/" in name or "\\" in name or ".." in name or name.startswith("."):
         return None
@@ -637,18 +643,25 @@ def _dir_item(dirpath, prefix, name):
         return None
     if not isinstance(d, dict):
         return None
-    return {
+    stem = name.rsplit(".", 1)[0]
+    item = {
         "file": prefix + name,
-        "name": name[:-5],
-        "title": d.get("title") if isinstance(d.get("title"), str) else name[:-5],
+        "name": stem,
+        "kind": "cmpv" if name.endswith(".cmpv") else "dsp",
+        "title": d.get("title") if isinstance(d.get("title"), str) else stem,
         "desc": d.get("desc") if isinstance(d.get("desc"), str) else "",
-        "stages": d.get("stages") if isinstance(d.get("stages"), list) else [],
     }
+    if item["kind"] == "cmpv":
+        # 对比视图：只存目标文件路径（其它字段忽略）
+        item["targets"] = [t for t in (d.get("targets") or []) if isinstance(t, str)]
+    else:
+        item["stages"] = d.get("stages") if isinstance(d.get("stages"), list) else []
+    return item
 
 
 def _dir_list(dirpath, prefix):
     try:
-        names = sorted(n for n in os.listdir(dirpath) if n.endswith(".json"))
+        names = sorted(n for n in os.listdir(dirpath) if n.endswith(ITEM_EXTS))
     except FileNotFoundError:
         names = []
     return [i for i in (_dir_item(dirpath, prefix, n) for n in names) if i]
@@ -731,7 +744,7 @@ def _content_tree(dirpath, prefix):
             child = prefix + n + "/"
             dirs.append({"kind": "dir", "name": n, "path": child,
                          "children": _content_tree(p, child)})
-        elif n.endswith(".json"):
+        elif n.endswith(ITEM_EXTS):
             item = _dir_item(dirpath, prefix, n)
             if item:
                 files.append({"kind": "file", "name": n, "path": item["file"], "title": item["title"],
@@ -767,7 +780,7 @@ def api_item():
     if not isinstance(rel, str):
         return jsonify({"error": "路径不合法"}), 400
     rel = rel.replace("\\", "/")
-    if ".." in rel or not rel.startswith(CONTENT_PREFIX) or not rel.endswith(".json"):
+    if ".." in rel or not rel.startswith(CONTENT_PREFIX) or not rel.endswith(ITEM_EXTS):
         return jsonify({"error": "路径不合法"}), 400
     base = os.path.abspath(CONTENT_DIR)
     full = os.path.abspath(os.path.join(HERE, *[s for s in rel.split("/") if s]))
@@ -780,6 +793,76 @@ def api_item():
     if not item:
         return jsonify({"error": "这一条不存在或不是合法 JSON"}), 404
     return jsonify({"item": item})
+
+
+# ---- 对比视图（.cmpv）：content/Compares/<name>.cmpv = { title, desc, targets:[DSP 文件路径] } ----
+# 一份 .cmpv 只记"要比哪几条"，不复制内容；打开它时前端用卡片列表渲染这些目标。
+CMPV_NAME_RE = re.compile(r"^[A-Za-z0-9 _-]+$")
+
+
+def _cmpv_write(name, body):
+    """原子写一份 .cmpv。targets 只收 content/ 下的 .json 路径（去重、保持顺序）；没有有效目标就拒写。"""
+    targets, seen = [], set()
+    for t in (body.get("targets") or []):
+        if not isinstance(t, str) or not t.endswith(".json"):
+            continue
+        if not t.startswith(CONTENT_PREFIX) or ".." in t or t in seen:
+            continue
+        seen.add(t)
+        targets.append(t)
+    if not targets:
+        return None
+    os.makedirs(CMPV_DIR, exist_ok=True)
+    out = {
+        "title": body.get("title") if isinstance(body.get("title"), str) else "未命名对比",
+        "desc": body.get("desc") if isinstance(body.get("desc"), str) else "",
+        "targets": targets,
+    }
+    p = os.path.join(CMPV_DIR, name + ".cmpv")
+    tmp = p + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return None
+    return _dir_item(CMPV_DIR, CMPV_PREFIX, name + ".cmpv")
+
+
+@app.route("/api/cmpv", methods=["POST"])
+def api_cmpv_create():
+    """新建一份对比视图：body { name, title?, desc?, targets:[...] }；同名已存在返回 409。"""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "请求体必须是对象"}), 400
+    name = body.get("name")
+    if not isinstance(name, str) or not CMPV_NAME_RE.match(name):
+        return jsonify({"error": "name 只能是字母/数字/空格/下划线/短横线"}), 400
+    if os.path.exists(os.path.join(CMPV_DIR, name + ".cmpv")):
+        return jsonify({"error": f"{name}.cmpv 已存在"}), 409
+    item = _cmpv_write(name, body)
+    if not item:
+        return jsonify({"error": "没有有效目标（targets 需为 content/ 下的 .json 路径）"}), 400
+    return jsonify({"item": item})
+
+
+@app.route("/api/cmpv/<path:name>", methods=["DELETE"])
+def api_cmpv_delete(name):
+    """删掉一份对比视图（只删 .cmpv 本身，不动被引用的 DSP 文件）。"""
+    stem = name[:-5] if isinstance(name, str) and name.endswith(".cmpv") else name
+    if not isinstance(stem, str) or not CMPV_NAME_RE.match(stem):
+        return jsonify({"error": "文件名不合法"}), 400
+    try:
+        os.remove(os.path.join(CMPV_DIR, stem + ".cmpv"))
+    except FileNotFoundError:
+        return jsonify({"error": "这份对比已经不在了"}), 404
+    except OSError as e:
+        return jsonify({"error": f"删除失败：{e}"}), 500
+    return jsonify({"ok": True, "name": stem})
 
 
 # ---- 画布快照：暂停时前端把画布 toDataURL 出的 PNG 交给后端落盘，恢复播放时删掉 ----

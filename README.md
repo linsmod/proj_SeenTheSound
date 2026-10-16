@@ -76,7 +76,7 @@ python server.py
 ```
 mySoundZoneGrid/
 ├── index.html              # 主面板前端：布局、Canvas 绘制、SSE 客户端、侧栏图表
-├── dsp-lab.html            # DSP 实验室页（/dsp-lab）：管道位置 × 变换函数的图表矩阵
+├── dsp-lab.html            # DSP 实验室页（/dsp-lab）：content/ 目录树 + 卡片列表 + 链路视图 + 右栏编辑器
 ├── server.py               # Flask 后端：麦克风采集 → FFT/CQT → 门控 → SSE + content/ 读写接口
 ├── content/                # 内容根：DSP 页左栏文件树就是它的目录结构（只列 .json）
 │   ├── Templates/          # 出厂预设（只读）
