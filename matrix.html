@@ -24,36 +24,67 @@
     .legend-row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; padding: 6px 12px; background: #0b1226; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #8fa2c8; }
     .legend-row .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
     /* 图表矩阵单元格：高度写死 + 参数条移到画布下方并 margin-top:auto
-       → 8 张图的画布 y 坐标完全一致，横向逐行比对。宽度不写死，由 grid 列宽自适应 */
-    /* 主体左右分栏：左 grid（8 张固定图），右实验台。实验台不进 grid，
-       8 图的固定高/对齐不变式不受影响。
-       窄屏（手机等）放不下"grid 一列 + 实验台"时，靠 flex-wrap 自动把实验台换行到页面末尾，
-       不需要维护断点：换行阈值 = grid 基准 280 + 实验台 372 + gap 10 + wrap padding 24 = 686px */
+       → 各格画布 y 坐标完全一致，横向逐行比对。宽度不写死，由 grid 列宽自适应 */
+    /* 主体左右分栏：左 grid（0 号输入 + N 张可编辑图），右编辑器。编辑器不进 grid，
+       grid 各格的固定高/对齐不变式不受它影响。
+       右栏头部（目标下拉 / 标题 / 说明）压在画布上方，右栏画布因此不再与 grid 各格同 y，
+       换来"正在编辑谁 + 改什么标题"与结果图同屏可见。
+       窄屏（手机等）放不下"grid 一列 + 编辑器"时，靠 flex-wrap 自动把编辑器换行到页面末尾，
+       不需要维护断点：换行阈值 = grid 基准 280 + 编辑器 372 + gap 10 + wrap padding 24 = 686px */
     .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 10px 12px 16px; }
     /* grid 用 auto-fill 的 1fr 列：列宽全局一致，末行不会被拉伸成另一批宽度 → 跨行也能对齐。
        minmax(280px,·) 让列数随可用宽度自适应。flex 基准取 280（= 一列的最小宽），
        基准和超过容器就换行，实验台自动落到末尾。min-width:0 允许被压到内容宽以下 */
     .grid { flex: 1 1 280px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
-    /* 卡片外壳：8 张固定图（.cell）与实验台（.lab）共用同一套外观 —— 背景/圆角/描边/纵向流。
-       实验台的"上半身"（标题 + 副标题 + 画布 = 输出结果）与一个 cell 的上半身完全同构，
-       下半身是级联列表，对应 cell 里 .pbar 那条带所处的位置。 */
+    /* 卡片外壳：网格各格（.cell）与右栏编辑器（.lab）共用同一套外观 —— 背景/圆角/描边/纵向流。
+       .lab 里 .etop/.erow/.dsc 是编辑头（选目标、改标题说明），画布是"这一格的最终结果"，
+       再往下是工具条与逐级卡 —— 与一个 cell 的"标题 + 画布 + 底部一条参数带"同构，只是多了编辑控件。 */
     .cell, .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; }
-    .cell { height: 210px; }
+    /* 高度从 210 加到 238：底部多一条播放器按钮行。各格仍然等高 → 画布 y 依旧对齐 */
+    .cell { height: 238px; }
     .lab { flex: 1 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
     /* 吸附 + 栏内滚动只在并排时启用：换行到下方后 sticky 会把整块钉在视口顶、max-height 又逼出内滚动，
        在手机上反而难用。阈值 686 与上面 flex 基准之和一致，两处数字要同步改 */
     @media (min-width: 686px) {
         .lab { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
     }
-    /* 标题 / 副标题：cell 与实验台上半身共用 */
-    .cell .hd, .lab .hd { flex: none; font-size: 14px; font-weight: 700; color: #bcc8e8; }
-    .cell .hd { cursor: help; }                              /* cell 标题带 title 说明，实验台标题没有 */
+    /* 标题 / 副标题：cell 与编辑器共用 */
+    .cell .hd { flex: none; display: flex; align-items: center; font-size: 14px; font-weight: 700; color: #bcc8e8; cursor: pointer; }
+    /* 标题行三段分开：序号徽标 / 标题文本 / 已改标记。序号不进标题文本 ——
+       标题可改、还能「另存为新图」，序号必须由位置算，改名与增删格都不会打乱编号。
+       .ttl 吃掉剩余宽度（flex:1 + min-width:0）：标题过长时自己截断，
+       后面的 ● ✎ ⋯ 始终被顶到这一行最右端。 */
+    .cell .hd .ord { flex: none; margin-right: 4px; color: #4ae0ff; }
+    .cell .hd .ttl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cell .hd .mark { flex: none; margin-left: 4px; color: #ffb347; font-size: 10px; }
+    .cell .hd .pmark { flex: none; margin-left: 4px; color: #4ae0ff; font-size: 11px; }   /* ✎ = 该格有未保存草稿 */
+    .cell .hd .mb { flex: none; margin-left: 4px; padding: 0 5px; background: #0e1630; border: 1px solid rgba(255,255,255,0.14); color: #8fa2c8; font-size: 12px; line-height: 1.25; cursor: pointer; border-radius: 5px; }
+    .cell .hd .mb:hover, .cell .hd .mb:focus-visible { color: #fff; background: #263a60; border-color: rgba(74,224,255,0.45); }
+    .cell canvas.mx { cursor: pointer; }
+    /* 这一格正在右栏被编辑且草稿已脏 → 锁住左格参数条：状态在右栏手里，左格再改就成两份了 */
+    .cell .pbar.locked { opacity: 0.35; pointer-events: none; }
+    /* .sel = 正在被右栏编辑的这一格。tabindex + Enter/Space 让键盘也能选中（focus-visible 出虚线框） */
+    .cell.sel { border-color: #4ae0ff; box-shadow: 0 0 0 1px rgba(74,224,255,0.45); }
+    .cell:focus-visible { outline: 1px dashed #4ae0ff; outline-offset: 1px; }
     .cell .pipe, .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     canvas.mx { flex: none; display: block; width: 100%; height: 132px; background: #0a1022; border-radius: 6px; }
     /* 参数条贴单元格底部：有无参数都占同一条带（选择器收窄到 .cell，避免影响顶栏的 #globalBar） */
-    .cell .pbar { margin-top: auto; }
-    /* 下半身的工具条（加一级 / 清空）—— 与级联列表同属下半身，不进标题行 */
-    .ltools { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+    .cell .foot { flex: none; margin-top: auto; }      /* 参数条 + 播放器按钮行合成一个底部块，整体贴底 */
+    /* 底部播放器按钮组：右对齐。⏸/▶ = 该格冻结 / 继续播放（恢复播放时快照随之清掉） */
+    .cell .prow { display: flex; justify-content: flex-end; gap: 4px; margin-top: 3px; }
+    .cell .prow button { flex: none; min-width: 22px; height: 18px; padding: 0 5px; background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; font-size: 11px; line-height: 1; cursor: pointer; }
+    .cell .prow button:hover:not(:disabled) { background: #263a60; color: #fff; }
+    .cell .prow button:disabled { opacity: 0.3; cursor: default; }
+    .cell.paused canvas.mx { opacity: 0.55; }
+    .cell.paused .hd .ttl { color: #7d8db3; }
+    /* 顶栏的全局播放控制：与全局参数条同族，放在它们右边 */
+    .gctl { display: inline-flex; align-items: center; gap: 4px; }
+    .gctl button { background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+    .gctl button:hover { background: #263a60; color: #fff; }
+    /* 下半身的工具条（保存 / 级联编排 / 复制 / 导入导出；删除与恢复出厂在格子的 ⋯ 菜单里） */
+    .ltools { flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+    .lbtn.primary { border-color: rgba(74,224,255,0.45); color: #cbeeff; }
+    .lbtn:disabled { opacity: 0.35; cursor: default; }
     .lbtn { background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; font-size: 12px; padding: 3px 12px; cursor: pointer; }
     .lbtn:hover { background: #263a60; color: #fff; }
     /* 级联逐级出图，且每张卡自带全部编排控件（收起也可用）：
@@ -78,29 +109,81 @@
     .lcard-body { margin-top: 4px; }
     .lcard.collapsed .lcard-body { display: none; }
     .lctl { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-bottom: 4px; }
+    /* 右栏编辑器头部：状态位 + 关闭按钮（关掉就回到"没在编辑任何一格"的空态） */
+    .lab .etop { flex: none; display: flex; gap: 6px; align-items: center; margin-bottom: 4px; font-size: 11px; color: #8fa2c8; }
+    .lab .dirty { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffb347; }
+    .lab .xbtn { flex: none; width: 20px; height: 18px; padding: 0; background: none; border: 1px solid transparent; border-radius: 4px; color: #8fa2c8; font-size: 12px; line-height: 1; cursor: pointer; }
+    .lab .xbtn:hover { background: #263a60; color: #fff; border-color: rgba(255,255,255,0.15); }
+    /* 空态：没有选中任何一格时只留这句提示，其余控件全部收起 */
+    .lab .idle { display: none; padding: 22px 12px; font-size: 12px; line-height: 1.8; color: #5a6c94; text-align: center; }
+    .lab.idle .idle { display: block; }
+    .lab.idle .erow, .lab.idle .dsc, .lab.idle .pipe, .lab.idle .mx, .lab.idle .ltools, .lab.idle .lcharts { display: none; }
+    /* 只读态（原始输入格）：不给保存、不给级联编排，标题/说明仍可选中复制。
+       编排按钮一并藏掉，是为了把"只读"这条约定钉死 —— 将来若出现带级的只读条目也不会漏出编辑入口。 */
+    .lab.ro .edit-only, .lab.ro .lcard-hd .en, .lab.ro .lcard-hd .sel, .lab.ro .lcard-hd .sops { display: none; }
+    .lab.ro input.ttl, .lab.ro textarea.dsc { opacity: 0.72; }
+    .lab.ro .lcharts:empty::after { content: '（原始输入没有级联：什么都不做）'; }
+    .lab .erow { flex: none; display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+    .lab .erow .ord { flex: none; color: #4ae0ff; font-size: 14px; font-weight: 700; }
+    .lab input.ttl { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: #0a1022; color: #e8eefc; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 13px; font-weight: 700; padding: 2px 4px; }
+    .lab textarea.dsc { flex: none; width: 100%; box-sizing: border-box; margin-bottom: 4px; background: #0a1022; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 11px; padding: 2px 4px; resize: vertical; }
+    /* 关闭时的未保存询问（原生 dialog，语义与 VSCode 关标签一致：保存 / 丢弃 / 取消） */
+    dialog { background: #0e1630; color: #bcc8e8; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 14px 16px 12px; min-width: 340px; max-width: 460px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+    dialog::backdrop { background: rgba(4,8,18,0.62); }
+    .dlg-t { font-size: 14px; font-weight: 700; color: #e8eefc; margin-bottom: 6px; }
+    .dlg-b { font-size: 12px; line-height: 1.7; color: #8fa2c8; white-space: pre-line; margin-bottom: 12px; }
+    .dlg-f { display: flex; gap: 8px; justify-content: flex-end; }
+    /* 格子右上角 ⋯ 弹出的格级菜单：编辑 / 另存为 / 删除。挂在 body 上（格内浮层会被 grid 行布局挤变形），
+       position:fixed + getBoundingClientRect 用视口坐标，不用管滚动量 */
+    .cmenu { position: fixed; z-index: 30; min-width: 132px; padding: 4px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.55); }
+    .cmenu button { display: block; width: 100%; padding: 4px 8px; background: none; border: 0; border-radius: 4px; color: #bcc8e8; font-size: 12px; text-align: left; cursor: pointer; }
+    .cmenu button:hover { background: #263a60; color: #fff; }
+    .cmenu button.danger:hover { background: #6b2440; }
 </style>
 </head>
 <body>
 <div class="topbar">
     <span class="t">参数化矩阵 · 管道位置 × 变换函数</span>
     <span class="pbar" id="globalBar"></span>
+    <span class="gctl">
+        <button id="gPlay" type="button" title="全局播放 / 暂停（暂停时每格各存一张快照到存档）">⏸ 全部暂停</button>
+    </span>
     <span class="status" id="status">⏳ 连接后端…</span>
     <a href="/">← 主面板</a>
 </div>
 <div class="legend-row" id="legend"></div>
 <div class="wrap">
     <div class="grid" id="grid"></div>
-    <div class="lab">
-        <div class="hd">⑨ 自由探索 · 级联</div>
+    <div class="lab" id="lab">
+        <div class="etop">
+            <span class="dirty" id="labDirty"></span>
+            <button class="xbtn" id="labClose" type="button" title="关闭当前编辑（未保存会先问，走 VSCode 关闭标签那套：保存 / 丢弃 / 取消）">✕</button>
+        </div>
+        <div class="idle">左栏点一格即可编辑<br/>格子的 ⋯ 里有复制 / 删除</div>
+        <div class="erow">
+            <span class="ord" id="labOrd"></span>
+            <input class="ttl" id="labTitle" type="text" maxlength="60" placeholder="标题"/>
+        </div>
+        <textarea class="dsc" id="labDesc" rows="1" maxlength="400" placeholder="说明（鼠标悬停左侧格子时显示）"></textarea>
         <div class="pipe" id="labPipe"></div>
         <canvas class="mx" id="labCanvas"></canvas>
         <div class="ltools">
-            <button class="lbtn" id="labAdd" type="button">+ 加一级</button>
-            <button class="lbtn" id="labClear" type="button">清空</button>
+            <button class="lbtn primary" id="labSave" type="button" title="把所有格子待写回的草稿一次性写回左格，并存到服务端 matrix-doc.json">💾 保存</button>
+            <button class="lbtn edit-only" id="labAdd" type="button" title="在链尾追加一级（上限 8 级，12 音级 × 250 点远超够用）">+ 加一级</button>
+            <button class="lbtn edit-only" id="labClear" type="button" title="清空级联 = 不做任何变换（保存后该格将与 0 号输入同图）">清空</button>
         </div>
         <div class="lcharts" id="labCharts"></div>
     </div>
 </div>
+<dialog id="closeDlg">
+    <div class="dlg-t" id="dlgTitle"></div>
+    <div class="dlg-b" id="dlgBody"></div>
+    <div class="dlg-f">
+        <button class="lbtn primary" id="dlgSave" type="button">保存并关闭</button>
+        <button class="lbtn" id="dlgDrop" type="button">丢弃改动</button>
+        <button class="lbtn" id="dlgCancel" type="button">取消</button>
+    </div>
+</dialog>
 <script>
 (function () {
     'use strict';
@@ -189,25 +272,229 @@
     };
     // 一级工厂：id + 启用位；参数默认值由 buildParams 按 spec 填进 p
     const stage = (id) => ({ id, on: true, p: {} });
-    // 图表矩阵定义：8 条级联，标题写"为什么选它"（想看清什么特征），
-    // 机制（哪一级、什么算子、什么顺序）由下方 .pipe 摘要实时显示，title 悬停给完整说明。
+    // 图表矩阵定义：8 条内置级联，标题写"为什么选它"（想看清什么特征），
+    // 机制（哪一级、什么算子、什么顺序）由下方 .pipe 摘要实时显示，悬停格子显示 desc。
+    // id 是稳定身份（存档 key、另存为/删除/选中都靠它）——标题可改，所以绝不能拿标题当 key。
+    // 标题里不写 ①…⑳：序号由格子位置算出来（见 ordLabel），改名和增删格都不会打乱编号。
     const CHART_DEFS = [
-        { title: '① 看瞬时动态范围', desc: '重缩放基线：逐时刻用 12 音级的 min/max 拉伸到 0~1，丝带上下缘始终贴边 —— 每个时刻都能一眼读出"最平坦与最不坦平的音级差多少"。数据为满窗 K 点写入时冻结；主面板极差图走每帧滚动窗，仅最左 K−1 个点的窗口不满，两者其余点一致', stages: [stage('inv'), stage('rescale')] },
-        { title: '② 聚焦强音级', desc: '先 x^n（默认 n=2）再重缩放：平方让高值主导 min/max，弱音级被压成贴底的一条窄带。想看"此刻谁最强"用这个；代价是丢掉了动态范围本身。n>1 更极端，n<1（<1 即开方）反过来把弱音级拉开', stages: [stage('inv'), stage('pow'), stage('rescale')] },
-        { title: '③ 让弱音级显形', desc: '先 log(x+1e-3) 再重缩放：先压缩动态范围，弱音级才拿得到画布上的空间。音频 dBFS 的标准思路，也是主面板反平坦度曲线在做的事 —— 与②相反，②牺牲弱音级换峰值对比，③牺牲峰值对比换弱音级可见', stages: [stage('inv'), stage('log'), stage('rescale')] },
-        { title: '④ 看偏离均值几个 σ', desc: 'z-score：逐时刻算 12 音级的 μ 与 σ，按 ±zMax 夹紧后线性映射 0~1。看的是"相对偏离"而非绝对平坦度 —— 整体音量涨落会在 μ/σ 里被约掉，所以对音量变化免疫', stages: [stage('inv'), stage('zscore')] },
-        { title: '⑤ 只看强弱次序', desc: '分位秩：逐时刻按 12 音级大小排秩 0~1（并列取平均秩），完全丢弃幅度信息。强制均匀分布、抗异常值；只看谁排在前面，不看差多少', stages: [stage('inv'), stage('rank')] },
-        { title: '⑥ 锐化强弱对比', desc: '先重缩放再 x^n：输入已经是均匀分布，平方把 0~0.5 一段压到 0.25 以下，峰值保持。概率锐化 / 注意力权重的做法 —— 与②同为"平方"，但②在归一化前、⑥在归一化后', stages: [stage('inv'), stage('rescale'), stage('pow')] },
-        { title: '⑦ 拉开中间档位', desc: '先重缩放再 tanh：0 与 1 两个端点不动，中段被展开（k 越大中段越陡）。想强调"不上不下"的那批音级、又不让两端溢出时用', stages: [stage('inv'), stage('rescale'), stage('tanh')] },
-        { title: '⑧ 轻抬低位、留住高端', desc: '先重缩放再 log 并映回 0~1：0→0、1→1 端点不动，低段被温和抬起。比③温和得多 —— ③是在归一化之前压缩动态范围（幅度大），⑧是在归一化之后微调（幅度小）', stages: [stage('inv'), stage('rescale'), stage('log01')] },
+        { id: 'c1', title: '看瞬时动态范围', desc: '重缩放基线：逐时刻用 12 音级的 min/max 拉伸到 0~1，丝带上下缘始终贴边 —— 每个时刻都能一眼读出"最平坦与最不坦平的音级差多少"。数据为满窗 K 点写入时冻结；主面板极差图走每帧滚动窗，仅最左 K−1 个点的窗口不满，两者其余点一致', stages: [stage('inv'), stage('rescale')] },
+        { id: 'c2', title: '聚焦强音级', desc: '先 x^n（默认 n=2）再重缩放：平方让高值主导 min/max，弱音级被压成贴底的一条窄带。想看"此刻谁最强"用这个；代价是丢掉了动态范围本身。n>1 更极端，n<1（<1 即开方）反过来把弱音级拉开', stages: [stage('inv'), stage('pow'), stage('rescale')] },
+        { id: 'c3', title: '让弱音级显形', desc: '先 log(x+1e-3) 再重缩放：先压缩动态范围，弱音级才拿得到画布上的空间。音频 dBFS 的标准思路，也是主面板反平坦度曲线在做的事 —— 与②相反，②牺牲弱音级换峰值对比，③牺牲峰值对比换弱音级可见', stages: [stage('inv'), stage('log'), stage('rescale')] },
+        { id: 'c4', title: '看偏离均值几个 σ', desc: 'z-score：逐时刻算 12 音级的 μ 与 σ，按 ±zMax 夹紧后线性映射 0~1。看的是"相对偏离"而非绝对平坦度 —— 整体音量涨落会在 μ/σ 里被约掉，所以对音量变化免疫', stages: [stage('inv'), stage('zscore')] },
+        { id: 'c5', title: '只看强弱次序', desc: '分位秩：逐时刻按 12 音级大小排秩 0~1（并列取平均秩），完全丢弃幅度信息。强制均匀分布、抗异常值；只看谁排在前面，不看差多少', stages: [stage('inv'), stage('rank')] },
+        { id: 'c6', title: '锐化强弱对比', desc: '先重缩放再 x^n：输入已经是均匀分布，平方把 0~0.5 一段压到 0.25 以下，峰值保持。概率锐化 / 注意力权重的做法 —— 与②同为"平方"，但②在归一化前、⑥在归一化后', stages: [stage('inv'), stage('rescale'), stage('pow')] },
+        { id: 'c7', title: '拉开中间档位', desc: '先重缩放再 tanh：0 与 1 两个端点不动，中段被展开（k 越大中段越陡）。想强调"不上不下"的那批音级、又不让两端溢出时用', stages: [stage('inv'), stage('rescale'), stage('tanh')] },
+        { id: 'c8', title: '轻抬低位、留住高端', desc: '先重缩放再 log 并映回 0~1：0→0、1→1 端点不动，低段被温和抬起。比③温和得多 —— ③是在归一化之前压缩动态范围（幅度大），⑧是在归一化之后微调（幅度小）', stages: [stage('inv'), stage('rescale'), stage('log01')] },
     ];
+
+    // ---------- 文档模型：一份可序列化 JSON = 整页真相（草稿） ----------
+    // { v, charts: [ {id, title, desc, stages:[{id,on,p,collapsed}]}] }
+    //   id      稳定身份：'c1'…'c8' 内置 8 图，LAB_ID 实验台，'uN' 复制出来的新图。标题可改，不能拿来当 key
+    //   stages  按 id 查 OPS 注册表；非法 id / 越界参数在 sanitizeStages 里就地纠正
+    // DOC 是当前工作副本（页面所见即 DOC：改标题、改说明、增删级、拖参数都直接写它，没有第二份副本要同步）
+    // lastSaved 是最近一次存进服务端的 JSON；两者不等 = 状态位报"未落盘"。左格参数条也写 DOC —— 成品可就地调参
+    // PRISTINE 存内置 8 图的出厂快照：供「恢复出厂」和"是否改过(●)"角标用
+    // 0 号输入格不进 DOC：它没有任何可改字段，是所有图的共同起点
+    const DOC_V = 1, LAB_ID = 'lab', LEGACY_LAB_KEY = 'labStages', LEGACY_BROWSER_KEY = 'matrixDoc';
+    const MAX_STAGES = 8;                        // 与"加一级"上限一致
+    const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+    function ordLabel(n) { return n >= 1 && n <= 20 ? CIRCLED[n - 1] : '(' + n + ')'; }
+    const cloneStage = (s) => ({ id: s.id, on: s.on, p: { ...s.p }, collapsed: s.collapsed });
+    // 存档比对用的规范形式：p 的键排序，避免同一份数据仅因键序不同被误判成"改过"
+    function sortObj(o) { const r = {}; for (const k of Object.keys(o).sort()) r[k] = o[k]; return r; }
+    function entryJson(e) {
+        return JSON.stringify({
+            id: e.id, title: e.title, desc: e.desc,
+            stages: e.stages.map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p), collapsed: !!s.collapsed })),
+        });
+    }
+    // 首次访问时实验台的默认级联：反相 → scalar → vector → scalar，演示三种 kind 的位置差异。
+    // 声明放在这里而不是编辑器段：loadDoc() 在模块初始化时就可能调用 defaultLabEntry()，放到后面会撞 TDZ
+    const LAB_DEFAULT_STAGES = [{ id: 'inv', on: true, p: {} }, { id: 'pow', on: true, p: {} }, { id: 'rescale', on: true, p: {} }, { id: 'log01', on: true, p: {} }];
+    function defaultLabEntry() {
+        const stages = labDefaultCollapse((sanitizeStages(LAB_DEFAULT_STAGES) || []).map((s) => ({ ...s })));
+        return { id: LAB_ID, title: '自由探索 · 级联', desc: '随手拼一条链看效果；不改动左侧任何一格，只存在浏览器本地', stages };
+    }
+    function defaultDoc() {
+        return {
+            v: DOC_V,
+            // 过一遍 sanitizeStages：它会把每级 params 的缺省补全，DOC 落盘前就是完整的一份，
+            // 不然 buildParams 后补的默认值会让"已保存基线"立刻对不上（● 未保存 / ● 已改 误亮）
+            charts: CHART_DEFS.map((d) => ({ id: d.id, title: d.title, desc: d.desc, stages: sanitizeStages(d.stages) || [] }))
+                .concat([defaultLabEntry()]),
+            view: emptyView(),
+        };
+    }
+    // 视图状态独立于内容：暂停名单 + 每格的画面快照（base64 PNG）+ 右栏开着哪些标签。
+    // 放在根上而不是每格里 —— 只读的原始输入格也归它管，而且它跟标题/级联这种"内容"不是一回事。
+    // openedTabs 目前最多一个（右栏是单标签），先按数组存，将来要开多标签不用改存档格式。
+    function emptyView() { return { paused: [], shots: {}, openedTabs: [] }; }
+    function sanitizeView(raw, ids) {
+        const v = emptyView();
+        if (!raw || typeof raw !== 'object') return v;
+        const set = new Set(ids);
+        if (Array.isArray(raw.paused)) {
+            v.paused = raw.paused.filter((id) => set.has(id)).slice(0, 64);
+        }
+        if (Array.isArray(raw.openedTabs)) {
+            const seen = new Set();
+            v.openedTabs = raw.openedTabs.filter((id) => set.has(id) && !seen.has(id) && seen.add(id)).slice(0, 8);
+        }
+        if (raw.shots && typeof raw.shots === 'object') {
+            for (const [id, url] of Object.entries(raw.shots)) {
+                // 只收本项目认得的 id + 像 dataURL 的字符串；超长的直接丢，别让存档膨胀
+                if (set.has(id) && typeof url === 'string' && url.startsWith('data:image/png') && url.length <= MAX_SHOT) {
+                    v.shots[id] = url;
+                }
+            }
+        }
+        return v;
+    }
+    const MAX_SHOT = 200000;   // 单张快照上限（约 150KB PNG）；超了就不存，只留播放状态
+    // 整份存档的入口校验：非对象 / charts 非数组 → 判无效（退回默认）。
+    // 单格：title 空 → "未命名"、超长截断；desc 非字符串 → 空串；id 缺失或重复 → 丢这一格（宁可少一格也不错配）
+    function sanitizeDoc(raw) {
+        if (!raw || typeof raw !== 'object' || !Array.isArray(raw.charts)) return null;
+        const seen = new Set(), charts = [];
+        for (const c of raw.charts) {
+            if (!c || typeof c !== 'object') continue;
+            if (typeof c.id !== 'string' || !c.id || seen.has(c.id)) continue;
+            seen.add(c.id);
+            const title = typeof c.title === 'string' ? c.title.trim().slice(0, 60) : '';
+            charts.push({
+                id: c.id,
+                title: title || '未命名',
+                desc: typeof c.desc === 'string' ? c.desc.slice(0, 400) : '',
+                stages: (sanitizeStages(c.stages) || []).slice(0, MAX_STAGES),
+            });
+        }
+        if (!charts.length) return null;
+        const ids = charts.map((c) => c.id).concat([INPUT_ID]);
+        return { v: DOC_V, charts, view: sanitizeView(raw.view, ids) };
+    }
+    function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+    // ---------- 存档：走后端 /api/doc，落点是项目目录下的 matrix-doc.json ----------
+    // 左栏 = 带预览的文件列表，右栏 = 编辑器标签页；文档本体只有一份，跟着项目走。
+    // 这里是异步的，所以页面先用出厂配置把 UI 立起来，拿到文档再整块重建（buildGrid 会重来一次）。
+    let DOC = defaultDoc();
+    let lastSaved = entryDocJson(DOC);   // 已存盘基线；出厂配置先当基线，避免刚进来就报"未落盘"
+    let storeState = 'load';              // load → ok | offline | error，用于状态位与提示
+    let storeMsg = '';
+    function entryDocJson(d) { return JSON.stringify({ v: DOC_V, charts: d.charts, view: d.view || emptyView() }); }
+    async function loadDocFromServer() {
+        let res;
+        try {
+            res = await fetch('/api/doc', { cache: 'no-store' });
+        } catch (e) {
+            storeState = 'offline'; storeMsg = '连不上后端，本次改动只在内存里';
+            return { doc: legacyOrDefault(), migrate: null };
+        }
+        let body = null;
+        try { body = await res.json(); } catch (e) { body = null; }
+        if (res.ok && body && body.exists && body.doc) {
+            const doc = sanitizeDoc(body.doc);
+            if (doc) {
+                if (!doc.charts.some((c) => c.id === LAB_ID)) doc.charts.push(defaultLabEntry());
+                storeState = 'ok';
+                return { doc, migrate: null };
+            }
+            storeState = 'error'; storeMsg = '服务端文档结构不对，已退回出厂配置';
+            return { doc: defaultDoc(), migrate: null };
+        }
+        if (res.ok && body && body.exists === false) {
+            // 服务端还没有文档：把浏览器里旧版本地存档顶上去（迁移只做一次），没有就用出厂配置
+            const legacy = legacyOrDefault();
+            const fromBrowser = sanitizeDoc(parseMaybe(safeGet(LEGACY_BROWSER_KEY)));
+            storeState = 'ok';
+            return { doc: legacy, migrate: fromBrowser || null };
+        }
+        storeState = 'error';
+        storeMsg = (body && body.error) ? String(body.error).slice(0, 80) : `服务端返回 ${res.status}`;
+        return { doc: legacyOrDefault(), migrate: null };
+    }
+    function parseMaybe(s) { try { return JSON.parse(s || 'null'); } catch (e) { return null; } }
+    // 老版本地存档：matrixDoc → 旧到不能再旧的 labStages → 出厂配置
+    function legacyOrDefault() {
+        const d = defaultDoc();
+        const fromBrowser = sanitizeDoc(parseMaybe(safeGet(LEGACY_BROWSER_KEY)));
+        if (fromBrowser) {
+            if (!fromBrowser.charts.some((c) => c.id === LAB_ID)) fromBrowser.charts.push(defaultLabEntry());
+            return fromBrowser;
+        }
+        const legacy = sanitizeStages(parseMaybe(safeGet(LEGACY_LAB_KEY)));
+        if (legacy && legacy.length) d.charts[d.charts.length - 1].stages = labDefaultCollapse(ensureInv(legacy));
+        return d;
+    }
+    // 保存：整份覆盖写到服务端。先落内存基线（界面立刻变干净），失败再退回"未落盘"并说明原因。
+    // quiet：后台顺手写的视图状态（暂停 / 开着的标签）——不动"保存中…"这个给用户按保存看的状态位
+    let saving = false;
+    async function saveDocToServer(doc, quiet) {
+        if (!quiet) { saving = true; refreshDirty(); }
+        try {
+            const res = await fetch('/api/doc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(doc),
+            });
+            const body = await res.json().catch(() => null);
+            if (!res.ok) throw new Error((body && body.error) || `HTTP ${res.status}`);
+            storeState = 'ok'; storeMsg = '';
+            return true;
+        } catch (e) {
+            storeState = 'error';
+            storeMsg = `保存失败：${(e && e.message ? e.message : e).toString().slice(0, 80)}`;
+            return false;
+        } finally {
+            saving = false;
+            refreshDirty();
+        }
+    }
+    function adoptDoc(doc) {
+        DOC = doc;
+        lastSaved = entryDocJson(DOC);
+        drafts.clear();
+        const want = ((doc.view && doc.view.openedTabs) || [])[0];   // 还原上次开着的标签（格子若已被删就退回空态）
+        selected = want && entryOf(want) ? want : '';
+        bindDraft();
+        buildGrid();
+        syncEditorInputs();
+        labSync(true);
+        applyView();          // 还原播放状态 + 把存档里的快照画回画布
+        refreshDirty();
+    }
+    // 出厂快照（同样过 sanitizeStages，缺省参数补全后才和运行态同形）→ 供「恢复出厂」与"● 已改"角标比
+    const PRISTINE = new Map(CHART_DEFS.map((d) => [d.id, { id: d.id, title: d.title, desc: d.desc, stages: sanitizeStages(d.stages) || [] }]));
+    function isEdited(e) { const p = PRISTINE.get(e.id); return !!p && entryJson(e) !== entryJson(p); }
+
+    // ---------- 每格一份待写回的草稿（右栏的 editingObject） ----------
+    // drafts: id → { d: 该格的深拷贝, base: 克隆那一刻 DOC 的快照 JSON }
+    //   按需建（没点过的格子不占内存）、切换目标不清（在 ② ③ 之间来回切，两边改动各自留着）
+    //   每份草稿连各级 p 都是新对象 —— 右栏永远碰不到 DOC 里的原始对象
+    // 声明放在这里（网格构建之前）：renderCell 要用 draftDirty() 决定参数条锁不锁、✎ 角标显不显示
+    const drafts = new Map();
+    let DRAFT = null;             // 当前选中格那一份草稿的引用，省得逐级卡/输入框到处按 id 取
+    function cloneEntry(e) { return { id: e.id, title: e.title, desc: e.desc, stages: e.stages.map(cloneStage), readonly: !!e.readonly }; }
+    function draftOf(id) {
+        let r = drafts.get(id);
+        if (!r) {
+            const e = entryOf(id);          // 走 entryOf 而不是 DOC.charts：只读的原始输入格也在其中
+            if (!e) return null;
+            r = { d: cloneEntry(e), base: entryJson(e) };   // 基线也走 entryJson：cloneEntry 带了 readonly 标记，
+                                                           // 直接 JSON.stringify 两边键集不同 → 每格恒判为脏
+            drafts.set(id, r);
+        }
+        return r;
+    }
+    function bindDraft() { const r = draftOf(selected); DRAFT = r ? r.d : null; }
+    function draftDirty(id) { const r = drafts.get(id || selected); return !!r && entryJson(r.d) !== r.base; }
+    function pendingIds() { const out = []; for (const id of drafts.keys()) if (draftDirty(id)) out.push(id); return out; }
 
     const chartCount = CHART_N;   // 固定满窗（滚动示波器式，与主面板一致）
     const pipeTmp = new Float64Array(SFM_PC);   // 单点 12 音级工作区（computeChart 同步调用，不可跨图复用）
     const rankTmp = new Float64Array(SFM_PC);   // rank 就地改写前先快照原值
 
     // 单图管道计算：sfmLines（12×CHART_N 滑窗合成的 SFM）→ ch.out（同布局，0~1 归一值）
-    // stages 是唯一事实来源：固定图与下方实验台共用同一条执行路径。
+    // stages 是唯一事实来源：网格各格与右栏逐级卡共用同一条执行路径。
     // 反相不再写死在这里 —— 它是 OPS 里的普通算子 inv，由各图自己的 stages 决定要不要、放在哪。
     function computeChart(ch, sfmLines) {
         const out = ch.out, stages = ch.stages;
@@ -252,10 +539,13 @@
                 if (spec.max != null) input.max = spec.max;
                 if (spec.step != null) input.step = spec.step;
             }
-            input.value = spec.def;
+            // 控件初值取 dst 里已有的值（存档 / 上一轮编辑），不是 spec.def：
+            // 一律写 def 会让"存档里 n=3.5"的滑杆显示 2，而管道里跑的是 3.5 —— 控件与实际不符
+            const initV = spec.dst[spec.key];
+            input.value = initV;
             const valEl = document.createElement('span');
             valEl.className = 'v';
-            valEl.textContent = typeof spec.def === 'number' ? (+spec.def).toFixed(2) : String(spec.def);
+            valEl.textContent = typeof initV === 'number' ? (+initV).toFixed(2) : String(initV);
             input.addEventListener('input', () => {
                 let v = input.value;
                 if (spec.type !== 'select') {
@@ -386,9 +676,11 @@
     // ---------- 图表矩阵：构建 DOM + 绘制 ----------
     // 画布尺寸不写死：CSS 侧由 grid 列宽自适应，这里实测每块画布的 CSS 宽当逻辑宽，
     // 位图 = 实测宽 × dpr → CSS 尺寸与位图永远 1:1，任何宽度下文字都不发虚。
-    const CH = 132, LAB_C_H = 112;   // 8 图 / 实验台输出图 / 实验台逐级图各自的画布高（输出图与 cell 同高）
+    const CH = 132, LAB_C_H = 112;   // 网格各格 / 右栏输出图 / 右栏逐级图各自的画布高
     const grid = document.getElementById('grid');
-    const charts = [];
+    const charts = [];              // 参与主循环绘制的全部画布（网格格 + 右栏输出图 + 右栏逐级卡）
+    const cellCharts = [];          // 仅网格格：重建网格时按这张表摘除，右栏那两类画布留在 charts 里
+    let selected = '';              // 正在右栏编辑的格子 id；'' = 空态（没打开任何一格，同 VSCode 没开标签）
     // 全局图例：12 音级色块 + 音名，各图共用（画线不再逐条标音名）
     (function buildLegend() {
         const box = document.getElementById('legend');
@@ -417,56 +709,232 @@
         return w;
     }
     // 0 号：输入（逐音级原始 SFM，未反相、未做任何变换）。放在 grid 最前面，
-    // 是下面 8 张固定图与右侧实验台级联的共同起点。
-    // stages 为空 → computeChart 直接把 clamp(sfmLines) 写进 out。反相是 OPS 里的可选算子 inv，
-    // 由各图自己的 stages 决定要不要，所以这一格显示的是"不反相"的原始输入。
-    (function buildInputCell() {
+    // 是下面所有可编辑图与右侧级联的共同起点。
+    // 它是**只读**的：原始量没有可改字段，反相（1-v）是 OPS 里的可选算子 inv，由各图自己的 stages 决定要不要。
+    // 只读格照样能点开看（标题 / 管道 / 画布都出得来），但不给保存、不给级联编排。
+    // 它不进 DOC —— 不是成品、不落盘，只是数据源。给一个常驻的只读条目，右栏才有东西可显示。
+    const INPUT_ID = 'input';
+    const INPUT_TITLE = '输入 · 原始 SFM';
+    const INPUT_DESC = '0 号输入：逐音级原始 SFM，未经反相也未经任何变换。只读（原始量没有可改字段）—— 反相 1-v 是可选算子，由各图/各级自己决定要不要。';
+    const READONLY_ENTRY = { id: INPUT_ID, title: INPUT_TITLE, desc: INPUT_DESC, stages: [], readonly: true };
+    function isReadonly(id) { return id === INPUT_ID; }
+    // 建一格：entry = DOC 里的一格（可编辑）或 READONLY_ENTRY（0 号输入，只读）
+    // 顺序固定为 标题 → 管道摘要 → 画布 → 参数条（参数在画布下方，格子高度写死，各格画布 y 对齐）
+    function buildCell(entry, ord) {
         const cell = document.createElement('div');
         cell.className = 'cell';
-        cell.innerHTML = `<div class="hd" title="0 号输入：逐音级原始 SFM，未经反相也未经任何变换。反相（1-v）是可选算子，由各图/各级自己决定要不要。"><span>输入 · 原始 SFM</span></div><div class="pipe"></div>`;
-        const cv = document.createElement('canvas');
-        cv.className = 'mx';
-        cell.appendChild(cv);
-        const pbar = document.createElement('div');
-        pbar.className = 'pbar';
-        cell.appendChild(pbar);
+        const ro = !!entry.readonly;
+        // 标题行逐节点写（textContent）：title/desc 来自用户输入且会进 localStorage，
+        // 走 innerHTML 会被引号/尖括号截断属性甚至塞进标签（旧代码用 innerHTML 是因为标题是可信常量）
+        const hd = document.createElement('div');
+        hd.className = 'hd';
+        const ordEl = document.createElement('span'); ordEl.className = 'ord';
+        const ttlEl = document.createElement('span'); ttlEl.className = 'ttl';
+        const markEl = document.createElement('span'); markEl.className = 'mark';
+        markEl.textContent = '●'; markEl.title = '这一格已被改过（与内置出厂不同）';
+        const pmarkEl = document.createElement('span'); pmarkEl.className = 'pmark';
+        pmarkEl.textContent = '✎'; pmarkEl.title = '这一格有未保存的草稿（点格子回来接着改）';
+        hd.append(ordEl, ttlEl, markEl, pmarkEl);
+        // 标题行末尾的 ⋯：格级操作（复制 / 删除 / 恢复出厂）收在这里，跟标题同一行、被顶到最右端。
+        // 只读格（原始输入）没有 ⋯：不能复制出成品、不能删、也不需要恢复出厂。
+        let menuBtn = null;
+        if (entry && !ro) {
+            menuBtn = document.createElement('button');
+            menuBtn.type = 'button';
+            menuBtn.className = 'mb';
+            menuBtn.textContent = '⋯';
+            menuBtn.title = '本格操作：复制 / 删除';
+            menuBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openCellMenu(menuBtn, entry); });
+            hd.appendChild(menuBtn);
+        }
+        const pipeEl = document.createElement('div'); pipeEl.className = 'pipe';
+        const cv = document.createElement('canvas'); cv.className = 'mx';
+        const pbar = document.createElement('div'); pbar.className = 'pbar';
+        // 底部 = 参数条 + 播放器按钮（⏸/▶），合成一块贴底，右对齐
+        const foot = document.createElement('div'); foot.className = 'foot';
+        const prow = document.createElement('div'); prow.className = 'prow';
+        const mkP = (txt, title, fn) => {
+            const b = document.createElement('button');
+            b.type = 'button'; b.textContent = txt; b.title = title;
+            b.addEventListener('click', (ev) => { ev.stopPropagation(); fn(); });
+            prow.appendChild(b);
+            return b;
+        };
+        const playBtn = mkP('⏸', '暂停这一格（画面停住；暂停时会存一张快照到存档里）', () => setPaused(entry.id, !isPaused(entry.id)));
+        foot.append(pbar, prow);
+        cell.append(hd, pipeEl, cv, foot);
         grid.appendChild(cell);
         const ch = {
-            title: '输入 · 原始 SFM',
-            stages: [],
+            entry, ord, ro, cell, ordEl, ttlEl, markEl, pmarkEl, menuBtn, pbar, pipeEl, playBtn,
+            paused: false, shotPainted: false,
+            stages: entry.stages,                    // 与 DOC 里同一批 stage 对象：左格参数条改的就是成品
+            title: entry.title,
             out: new Float32Array(SFM_PC * CHART_N),
             w: 0, h: CH,
-            cv, ctx: cv.getContext('2d'),
-            pipeEl: cell.querySelector('.pipe'),
+            cv, ctx: cv.getContext('2d'), isCell: true,
         };
-        ch.w = fitCanvas(cv, CH);
-        ch.pipeEl.textContent = pipeSummary(ch);
-        charts.push(ch);
-    })();
-    CHART_DEFS.forEach((def) => {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        // 顺序：标题 → 管道摘要 → 画布 → 参数条（参数在画布下方，单元格高度写死，各图画布 y 对齐）
-        cell.innerHTML = `<div class="hd" title="${def.desc}"><span>${def.title}</span></div><div class="pipe"></div>`;
-        const cv = document.createElement('canvas');
-        cv.className = 'mx';
-        cell.appendChild(cv);
-        const pbar = document.createElement('div');
-        pbar.className = 'pbar';
-        cell.appendChild(pbar);
-        grid.appendChild(cell);
-        const ch = {
-            ...def,
-            out: new Float32Array(SFM_PC * CHART_N), // 管道输出（0~1）
-            w: 0, h: CH,                               // 逻辑宽由实测填入（见 fitCanvas）
-            cv, ctx: cv.getContext('2d'),
-            pipeEl: cell.querySelector('.pipe'),
-        };
+        cell.tabIndex = 0;                           // 每格都能点开（含只读的原始输入格）
+        const pick = () => selectChart(entry.id);
+        cell.addEventListener('click', pick);
+        cell.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
         charts.push(ch);
         ch.w = fitCanvas(cv, CH);
-        buildParams(pbar, chartParamSpecs(ch), () => { ch.pipeEl.textContent = pipeSummary(ch); });
+        renderCell(ch);
+        return ch;
+    }
+    // 格子刷新：序号 / 标题 / 悬停说明 / 管道摘要 / 参数条。
+    // 结构变更（保存写回、增删格、导入）之后必须重跑，否则参数条还按旧算子的 spec 渲染，
+    // 控件与实际算子对不上。参数条回调只刷摘要与"未保存"，不重建（避免打断正在拖的滑杆）。
+    function renderCell(ch) {
+        const e = ch.entry;
+        ch.ordEl.textContent = ch.ord ? ordLabel(ch.ord) : '原';   // 只读的原始输入格没有圈号，给个"原"
+        ch.stages = e.stages;                        // 保存写回时 DOC.stages 被换成新数组，这里跟着重新指向
+        ch.ttlEl.textContent = e.title;
+        ch.title = e.title;
+        ch.cell.title = e.desc || '';
+        ch.markEl.style.display = isEdited(e) ? '' : 'none';
+        ch.cell.classList.toggle('sel', e.id === selected);
+        // 这一格有未写回的草稿 → 锁参数条（同一个参数不能被两边各写一次；
+        // 解锁后参数在右栏的逐级卡里照样能调）。只读格不会有草稿，永远不锁。
+        const pending = !ch.ro && draftDirty(e.id);
+        ch.pmarkEl.style.display = pending ? '' : 'none';
+        ch.pbar.classList.toggle('locked', pending);
+        ch.pbar.title = pending ? '这一格有未保存的改动（✎），先保存或关掉它，再从左调皮参' : '';
         ch.pipeEl.textContent = pipeSummary(ch);
-    });
+        buildParams(ch.pbar, chartParamSpecs(ch), () => {
+            ch.pipeEl.textContent = pipeSummary(ch);
+            // 左格调参 = 成品改动，直接写 DOC。把这一格的草稿丢掉（锁着的时候它不可能是脏的），
+            // 当前编辑目标的话重新克隆一份，两边不会分叉。
+            drafts.delete(e.id);
+            if (e.id === selected) { bindDraft(); labSync(true); }
+            refreshDirty();
+        });
+    }
+    // ---------- 格子右上角 ⋯ 菜单：格级操作 ----------
+    // 挂在 body 上：格子在 grid 里，浮层若作为格子的子元素会被行高/栅格布局挤压变形。
+    const menuEl = document.createElement('div');
+    menuEl.className = 'cmenu';
+    menuEl.hidden = true;
+    document.body.appendChild(menuEl);
+    function closeCellMenu() { menuEl.hidden = true; }
+    function openCellMenu(anchor, entry) {
+        menuEl.textContent = '';
+        // 点格子本身就是"编辑"，所以菜单里不再重复这一项
+        const items = [
+            ['复制', '深克隆成左侧新增的一格，并立刻跳到该副本；本格不动', () => cloneAsNew(entry.id), ''],
+            ['删除', '从左栏移除这一格（保存后才落盘，刷新可恢复）', () => deleteChart(entry.id), 'danger'],
+        ];
+        if (PRISTINE.has(entry.id)) {
+            items.splice(1, 0, ['恢复出厂', '把这一格恢复成内置出厂状态（内置 ①–⑧ 才有）', () => resetToDefault(entry.id), '']);
+        }
+        for (const [txt, tip, fn, cls] of items) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.textContent = txt; b.title = tip;
+            if (cls) b.className = cls;
+            b.addEventListener('click', () => { closeCellMenu(); fn(); });
+            menuEl.appendChild(b);
+        }
+        menuEl.hidden = false;
+        const r = anchor.getBoundingClientRect();
+        const vw = window.innerWidth || 1024, vh = window.innerHeight || 768;
+        menuEl.style.left = Math.max(4, Math.min(vw - menuEl.offsetWidth - 4, r.right - menuEl.offsetWidth)) + 'px';
+        menuEl.style.top = (r.bottom + 4 + menuEl.offsetHeight > vh ? Math.max(4, r.top - menuEl.offsetHeight - 4) : r.bottom + 4) + 'px';
+    }
+    window.addEventListener('click', (ev) => { if (!menuEl.hidden && !menuEl.contains(ev.target)) closeCellMenu(); });
+    window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeCellMenu(); });
+    window.addEventListener('resize', closeCellMenu);
+    // 整块重建网格：复制 / 删除 / 导入会改 DOC 的格数与顺序，序号是按位置算的，必须重排。
+    // 只摘 cellCharts 里的格子，右栏输出图与逐级卡继续留在 charts 里（它们的 DOM 不在 grid 内）。
+    // 实验台（LAB_ID）也是普通一格：右栏现在是纯编辑器，"自由探索"既然是 DOC 里的一条，就该能被点到、能复制、能删。
+    function buildGrid() {
+        grid.innerHTML = '';
+        for (const ch of cellCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
+        cellCharts.length = 0;
+        cellCharts.push(buildCell(READONLY_ENTRY, 0));      // 0 号输入：只读，可点开看，没有 ⋯
+        DOC.charts.forEach((e, i) => cellCharts.push(buildCell(e, i + 1)));
+    }
+    function cellOf(id) { return cellCharts.find((c) => c.entry && c.entry.id === id) || null; }
+    // ---------- 播放控制：暂停 = 冻结画面（停止 compute+draw，画布保持最后一帧） ----------
+    // 暂停那一刻把画布存成 base64 PNG 写进 DOC.view.shots，并顺手存一次盘（不提交任何草稿）。
+    // 载入时按 DOC.view 还原：暂停的格子不再参与绘制，并把存档里的快照画回画布（尺寸变化后也重画）。
+    function isPaused(id) { return !!id && !!(DOC.view && DOC.view.paused.includes(id)); }
+    function viewOf() { if (!DOC.view) DOC.view = emptyView(); return DOC.view; }
+    function chartsOfId(id) {
+        const out = [];
+        for (const ch of charts) if (ch.entry && ch.entry.id === id) out.push(ch);
+        return out;                                  // 含右栏输出图（它在选中时与该格同源）
+    }
+    function captureShot(ch) {
+        try {
+            const url = ch.cv.toDataURL('image/png');
+            if (url.length <= MAX_SHOT) { viewOf().shots[ch.entry.id] = url; return true; }
+        } catch (e) { /* toDataURL 失败（极端情况下画布不可导出）就不存，只保留暂停状态 */ }
+        return false;
+    }
+    function paintShot(ch) {
+        const u = DOC.view && ch.entry && DOC.view.shots[ch.entry.id];
+        if (!u) return false;
+        ch.ctx.clearRect(0, 0, ch.w, ch.h);
+        const img = new Image();
+        img.onload = () => { ch.ctx.drawImage(img, 0, 0, ch.w, ch.h); };
+        img.src = u;
+        ch.shotPainted = true;
+        return true;
+    }
+    // 同一 id 可能对应多块画布（理论上只有左格那块），一起冻结；快照只从左格画布取
+    // 右栏是编辑器，跟左栏的播发状态无关：它永远实时跑，不受这里的暂停影响
+    function setPaused(id, on, opts) {
+        const clean = !archiveDirty();   // 同上：先取，改 view 之后就取不到了
+        const v = viewOf();
+        v.paused = v.paused.filter((x) => x !== id);
+        if (on) v.paused.push(id);
+        else delete v.shots[id];      // 恢复播放 = 这张快照作废；清掉，免得存档里越攒越多陈旧图
+        for (const ch of chartsOfId(id)) {
+            ch.paused = on;
+            if (on) captureShot(ch);
+        }
+        const cell = cellOf(id);
+        if (cell) renderPlay(cell);
+        syncGlobalPlay();      // 单格暂停也影响"是不是全部暂停" → 全局按钮文案要跟着变
+        refreshDirty();
+        // 暂停/恢复都顺手存一次：播放状态与快照都在存档里（不提交任何草稿）
+        if (!opts || !opts.silent) viewAutoSave(clean);
+    }
+    function allPaused() {
+        const ids = cellCharts.map((c) => c.entry && c.entry.id).filter(Boolean);
+        return ids.length > 0 && ids.every(isPaused);
+    }
+    function setAllPaused(on) {
+        const clean = !archiveDirty();
+        for (const c of cellCharts) if (c.entry) setPaused(c.entry.id, on, { silent: true });
+        syncGlobalPlay();
+        viewAutoSave(clean);
+    }
+    function renderPlay(cell) {
+        const on = isPaused(cell.entry.id);
+        cell.cell.classList.toggle('paused', on);
+        cell.playBtn.textContent = on ? '▶' : '⏸';
+        cell.playBtn.title = on ? '继续播放这一格（快照会一起清掉）' : '暂停这一格（画面停住，并存一张快照到存档）';
+    }
+    // 载入 / adoptDoc 之后：把暂停状态贴到各块画布上，并把存档里的快照画回来
+    function applyView() {
+        for (const cell of cellCharts) {
+            renderPlay(cell);
+            for (const ch of chartsOfId(cell.entry.id)) {
+                ch.paused = isPaused(cell.entry.id);
+                if (ch.paused) paintShot(ch);
+            }
+        }
+        labOut.paused = false;    // 右栏是编辑器，始终实时（与左栏的播发/暂停无关）
+        syncGlobalPlay();
+    }
+    function syncGlobalPlay() {
+        const b = document.getElementById('gPlay');
+        const all = allPaused();
+        b.textContent = all ? '▶ 全部播放' : '⏸ 全部暂停';
+        b.title = all ? '恢复所有格子播放' : '暂停所有格子（每格各存一张快照到存档）';
+    }
+    buildGrid();
 
     // 全局参数：平坦度时间窗（影响所有图的数据源 sfmLines）
     const gState = {};
@@ -474,13 +942,11 @@
         [{ key: 'win', label: '平坦窗(秒)', type: 'range', min: 0.02, max: 1, step: 0.02, def: 0.2, dst: gState }],
         () => { sfmWinK = Math.max(1, Math.round(gState.win * CHART_HZ)); });
 
-    // ---------- 实验台：自由级联（与上面 8 图共用 OPS / computeChart，同一条执行路径） ----------
-    const LAB_KEY = 'labStages';
-    const labPipeEl = document.getElementById('labPipe');
-    // 存一份纯数据（id/on/p），刷新后恢复；非法 id 与越界参数在这里就地纠正。
+    // ---------- 级联存档的清洗（供文档模型 sanitizeDoc / defaultLabEntry 调用） ----------
+    // 存的是纯数据（id/on/p），非法 id 与越界参数在这里就地纠正。
     // 判存在必须用 hasOwnProperty：OPS 是普通对象，OPS['__proto__'] 会沿原型链拿到 Object.prototype（truthy），
     // 用真值判断会让脏存档里的 '__proto__'/'constructor' 混进来，随后取 .params 抛错、白屏。
-    function labSanitize(raw) {
+    function sanitizeStages(raw) {
         if (!Array.isArray(raw)) return null;
         const out = [];
         for (const s of raw) {
@@ -495,14 +961,9 @@
                 p[sp.key] = v;
             }
             out.push({ id: s.id, on: s.on !== false, p, collapsed: typeof s.collapsed === 'boolean' ? s.collapsed : undefined });
+            if (out.length >= MAX_STAGES) break;   // 存档里塞了超长链：截断，不给页面无限渲染的机会
         }
         return out;
-    }
-    function labLoad() {
-        try {
-            const list = labSanitize(JSON.parse(localStorage.getItem(LAB_KEY) || 'null'));
-            return list ? ensureInv(list) : null;
-        } catch (e) { return null; }
     }
     // 反相曾经写死在管道里（旧版每条链都隐含 1-v），现在是可选算子。
     // 旧存档里不可能有 inv 这一级，补在最前面以保持原语义；幂等（已有就不再补）。
@@ -513,9 +974,6 @@
         if (!list.some((s) => s.id === 'inv')) list.unshift({ id: 'inv', on: true, p: {}, collapsed: true });
         return list;
     }
-    function labSave() {
-        try { localStorage.setItem(LAB_KEY, JSON.stringify(lab.stages)); } catch (e) {}
-    }
     // 收起态缺省：只展开末级，其余中间级全部收起。已有明确布尔值的一律沿用（尊重用户改过的）。
     // 输入级(k=0)不属于"级"，它的收起态不落盘、随会话保留在卡片 class 上。
     function labDefaultCollapse(list) {
@@ -523,19 +981,176 @@
         list.forEach((s, i) => { if (typeof s.collapsed !== 'boolean') s.collapsed = i !== last; });
         return list;
     }
-    // lab 只存状态（stages）；出图交给 labCharts（二者分开，级联增减时不用动状态对象）
-    const lab = {
-        title: '⑨ 自由探索 · 级联',
-        // 首次访问的默认级联：反相 → scalar → vector → scalar，演示三种 kind 的位置差异
-        stages: labDefaultCollapse(labLoad() || labSanitize([{ id: 'inv', on: true, p: {} }, { id: 'pow', on: true, p: {} }, { id: 'rescale', on: true, p: {} }, { id: 'log01', on: true, p: {} }])),
-    };
-    // 输出图：就是实验台上半身那块画布（HTML 里已就位，和 cell 的画布同一位置、同一高度）。
+
+    // ---------- 右栏编辑器：每格一份关联草稿，保存才写回左格 ----------
+    // 关键约定：右栏碰的对象永远不是 DOC 里的那一份。
+    //   drafts   id → { d: 该格的深拷贝, base: 克隆那一刻 DOC 的快照 JSON }。按需建、切换不清，
+    //            所以可以在 ② 和 ③ 之间来回切，两边的改动各自留着（各自都有 ✎ 角标）
+    //   DRAFT    只是"当前选中格那一份草稿"的引用，省得逐级卡/输入框到处按 id 取
+    // 「保存」= 一次性把所有草稿深拷贝回各自 DOC 格 + 落盘；右上 ✕ = 关掉当前这一格（脏的先问保存/丢弃/取消）。
+    // 与网格各图共用 OPS / computeChart / buildParams，同一条执行路径 —— 右栏只是"换了个编辑入口"。
+    // 左格参数条走另一条路：直接写 DOC（成品可就地调参、实时生效）。有未保存草稿的格子会把参数条锁掉
+    //（见 renderCell），同一个参数不会被两边各写一次。
+    const labEl = document.getElementById('lab');
+    const labPipeEl = document.getElementById('labPipe');
+    const labTitleEl = document.getElementById('labTitle');
+    const labDescEl = document.getElementById('labDesc');
+    const labOrdEl = document.getElementById('labOrd');
+    const labDirtyEl = document.getElementById('labDirty');
+    const labCloseEl = document.getElementById('labClose');
+    const labSaveEl = document.getElementById('labSave');
+    const dlg = document.getElementById('closeDlg');
+    const dlgTitleEl = document.getElementById('dlgTitle');
+    const dlgBodyEl = document.getElementById('dlgBody');
+    function entryOf(id) { return DOC.charts.find((c) => c.id === id) || (id === INPUT_ID ? READONLY_ENTRY : null); }
+    function cur() { return entryOf(selected); }
+    function ordOf(id) { return isReadonly(id) ? '原' : ordLabel(Math.max(0, DOC.charts.findIndex((c) => c.id === id)) + 1); }
+    function archiveDirty() { return entryDocJson(DOC) !== lastSaved; }   // 成品侧：参数调参 / 增删格还没存进服务端
+    function pendingIds() { const out = []; for (const id of drafts.keys()) if (draftDirty(id)) out.push(id); return out; }
+    // 未保存提示按格归属：只报"当前这一格"的草稿状态。
+    // 之前是一盏全局灯：改完 ② 再去点 ③，右边还挂着"未保存"，读起来像是 ③ 没保存 —— 其实脏的是 ②。
+    // 别的格的待写回状态各有各的位置：格子上是 ✎；右栏在空态时补一句"N 格待写回"当提醒。
+    // 成品侧（左格调参 / 增删格，内存里已生效但磁盘上没有）单独用"未落盘"区分开。
+    function refreshDirty() {
+        const ro = isReadonly(selected);
+        const mine = !!selected && !ro && draftDirty(selected);
+        const others = pendingIds().filter((id) => id !== selected);
+        const n = pendingIds().length;
+        const unsaved = entryDocJson(DOC) !== lastSaved;      // 成品侧没存进服务端（草稿不算：那是"未保存"）
+        labDirtyEl.textContent = storeState === 'error' ? '存盘失败'
+            : storeState === 'offline' ? '离线'
+            : saving ? '保存中…'
+            : !selected ? (n ? `${n} 格待写回` : (unsaved ? '未落盘' : ''))
+            : mine ? `${ordOf(selected)} 未保存` : (unsaved ? '未落盘' : '');
+        labDirtyEl.hidden = !labDirtyEl.textContent;
+        labDirtyEl.title = storeMsg || (mine && others.length
+            ? `另有 ${others.length} 格待写回：${others.map(ordOf).join(' ')}（点那些格子上带 ✎ 的格子继续处理）`
+            : (!selected && n ? '点左侧格子上带 ✎ 的那格继续处理' : ''));
+        labCloseEl.hidden = !selected;        // 空态没有"正在编辑的东西"可关
+        labSaveEl.hidden = ro;               // 只读格没有草稿可写回，也就不给保存
+        for (const ch of cellCharts) {       // 各格 ✎ 角标跟随草稿状态（在右栏改草稿时格子没重渲染过）
+            if (ch.entry) ch.pmarkEl.style.display = !ch.ro && draftDirty(ch.entry.id) ? '' : 'none';
+        }
+    }
+    // 草稿 → 输入框。正在输入的那一格跳过，避免打字时被回写打断
+    function syncEditorInputs() {
+        if (!DRAFT) return;
+        const ro = !!DRAFT.readonly;          // 只读格：文本仍可选中复制，但改不了
+        labOrdEl.textContent = ordOf(DRAFT.id);
+        labTitleEl.readOnly = ro;
+        labDescEl.readOnly = ro;
+        if (document.activeElement !== labTitleEl) labTitleEl.value = DRAFT.title;
+        if (document.activeElement !== labDescEl) labDescEl.value = DRAFT.desc;
+    }
+    // 点格子即开始编辑。每格的草稿存在 drafts 里，切走切回都不丢
+    function selectChart(id) {
+        if (id === selected || !entryOf(id)) return;
+        const clean = !archiveDirty();   // 必须先取：改 openedTabs 本身就会让 DOC 与基线不等
+        selected = id;
+        viewOf().openedTabs = [id];      // 右栏当前开着哪个标签，跟着存档走
+        bindDraft();
+        for (const ch of cellCharts) renderCell(ch);      // 刷新各格的 ✎ 角标 / 参数条锁
+        syncEditorInputs();
+        labSync(true);
+        viewAutoSave(clean);
+    }
+    // 视图状态（暂停 / 快照 / 开着的标签）就在 DOC 里，这类改动本身也算"未落盘"。
+    // 成品侧此刻没有别的待落盘改动时顺手写盘；有的话留着 —— 不能替用户把待保存的删格/调参一起交了。
+    function viewAutoSave(clean) { if (clean) saveDoc(false); }
+    // 关闭当前编辑 = 关掉这个"标签"。有未保存先问，语义照搬 VSCode 关标签：保存 / 丢弃 / 取消
+    function closeEditor() {
+        if (!selected) return;
+        if (!draftDirty(selected)) { commitClose(); return; }
+        dlgTitleEl.textContent = `${ordOf(selected)} 未保存`;
+        dlgBodyEl.textContent = `「${DRAFT.title}」还有没保存的改动。\n保存 = 写回左格并落盘；丢弃 = 只丢掉这一格的草稿，左格不动。`
+            + (archiveDirty() ? '\n另外成品侧还有改动没落盘（参数调整 / 增删格），保存会一并写盘。' : '');
+        dlg.showModal();
+    }
+    function commitClose() {
+        const clean = !archiveDirty();
+        selected = '';
+        viewOf().openedTabs = [];        // 关掉了，存档里也不留
+        bindDraft();                 // → null，右栏回到空态
+        for (const ch of cellCharts) renderCell(ch);
+        syncEditorInputs();
+        labSync(true);
+        viewAutoSave(clean);
+    }
+    // 提交：把所有待写回的草稿一次性深拷贝回各自 DOC 格（左格此刻才变），再整份存到服务端。
+    // 存盘失败不吞：lastSaved 保持旧值 → 状态位继续报"未落盘"，并把原因挂在 title 上。
+    async function saveDoc(commitDrafts) {
+        const commit = commitDrafts !== false;      // 播放控制触发的存盘只写视图状态，不动右栏的草稿
+        if (commit) {
+            for (const [id, r] of drafts) {
+                const e = entryOf(id);
+                if (!e || e.readonly) continue;               // 格子被删了 / 只读格没有草稿可写回
+                e.title = r.d.title.trim().slice(0, 60) || '未命名';
+                e.desc = r.d.desc.slice(0, 400);
+                e.stages = r.d.stages.slice(0, MAX_STAGES).map(cloneStage);
+            }
+            drafts.clear();                                // 写回后草稿与成品同形，没必要留着
+            bindDraft();
+            for (const ch of cellCharts) renderCell(ch);   // 标题 / 管道摘要 / 参数条（按新算子重建）
+            syncEditorInputs(); labSync(true);
+        }
+        const prev = lastSaved;
+        lastSaved = entryDocJson(DOC);                     // 先乐观置为已存：界面立刻干净
+        refreshDirty();
+        const ok = await saveDocToServer(DOC, !commit);     // 只写视图的后台存盘，不亮"保存中…"
+        lastSaved = ok ? entryDocJson(DOC) : prev;         // 失败就把基线退回去，状态位重新亮起来
+        refreshDirty();
+    }
+    // 恢复出厂（成品侧操作，立即生效）：只有内置 8 图有出厂快照；自建的格子没这一项。
+    // 这一格的草稿一起丢掉：它本来就是"改这一格"，改成出厂后没什么可保留的
+    function resetToDefault(id) {
+        const p = PRISTINE.get(id);
+        const e = entryOf(id);
+        if (!p || !e) return;
+        e.title = p.title; e.desc = p.desc;
+        e.stages = p.stages.map(cloneStage);
+        drafts.delete(id);
+        if (id === selected) bindDraft();
+        const ch = cellOf(id);
+        if (ch) renderCell(ch);
+        syncEditorInputs(); labSync(true); refreshDirty();
+    }
+    function newChartId() { let i = 1; while (DOC.charts.some((c) => c.id === 'u' + i)) i++; return 'u' + i; }
+    // 复制：把来源深克隆一份立刻变成成品格（左侧多一格），并跳到该副本接着编辑。
+    // srcId 缺省 = 用当前草稿（"把右栏这条链固化成一张正式图"）；给了 id = 克隆那一格的成品。
+    // 来源那一格不动，它的草稿照旧留着等保存。
+    function cloneAsNew(srcId) {
+        const src = srcId ? entryOf(srcId) : DRAFT;
+        if (!src) return;
+        const e = { id: newChartId(), title: src.title.replace(/ 副本( \d+)?$/, '') + ' 副本', desc: src.desc, stages: src.stages.map(cloneStage) };
+        const at = DOC.charts.findIndex((c) => c.id === LAB_ID);
+        DOC.charts.splice(at < 0 ? DOC.charts.length : at, 0, e);   // 插在实验台之前 → 左侧新增一格、其后各格序号顺延
+        selectChart(e.id);                          // 切到新格：它与克隆源没有任何共享引用，草稿也是新的
+        buildGrid(); labSync(true); refreshDirty();
+    }
+    // 删除（成品侧操作，由格子的 ⋯ 菜单触发）：从 DOC 摘掉，它自己的草稿跟着一起消失，
+    // 别的格的草稿不受影响。删除只是成品改动，按「保存」才落盘；本页刷新就恢复。
+    function deleteChart(id) {
+        const i = DOC.charts.findIndex((c) => c.id === id);
+        if (i < 0) return;
+        if (!confirm(`删除「${DOC.charts[i].title}」？\n删除后按「保存」才落盘；本页刷新就恢复。`)) return;
+        const lostDraft = draftDirty(id) ? '\n（这一格还有未保存的草稿，会一起丢掉）' : '';
+        DOC.charts.splice(i, 1);
+        drafts.delete(id);
+        if (id === selected) commitClose();   // 删的就是正在编辑的那格 → 右栏直接空态（VSCode 关标签）
+        buildGrid();
+        syncEditorInputs(); labSync(true); refreshDirty();
+        if (lostDraft) alert('已删除，该格未保存的草稿一并丢弃' + lostDraft.trim());
+    }
+    // 备好第一份草稿：右栏所有画布（输出图 / 逐级卡）都从 DRAFT 取数据，必须早于它们建对象
+    bindDraft();
+
+    // 输出图：就是右栏上半身那块画布（HTML 里已就位，高度与左格画布一致）。
     // 数值上必然等于末级卡（都是跑完全部 N 级），但它不随逐级收起/展开，也不随滚动移出视野，
-    // 所以单独留在上半身当"当前自由组合的结果"。不需要卡片包裹，也没有额外标签。
+    // 所以单独留在上半身当"当前这一格的最终结果"。不需要卡片包裹，也没有额外标签。
     const labOut = { stages: [], out: new Float32Array(SFM_PC * CHART_N), w: 0, h: CH, hidden: false };
     labOut.cv = document.getElementById('labCanvas');
     labOut.ctx = labOut.cv.getContext('2d');
-    labOut.stages = lab.stages.slice();
+    labOut.stages = DRAFT ? DRAFT.stages.slice() : [];   // 空态下没有草稿，逐级卡与画布都空转
     labOut.w = fitCanvas(labOut.cv, CH);
     charts.push(labOut);
     // 逐级出图 + 级联操作合到同一张卡片：一张卡 = 一级 = 一张图。
@@ -549,15 +1164,16 @@
     // 收起时头部足以判断"这是第几级、什么算子、参数多少、在链上什么位置"，且仍可编排。
     const labCharts = [];
     function rebuildLabCharts() {
-        labOut.stages = lab.stages.slice();     // 输出图跟着最新级联走（元素同引用，参数改动即时生效）
+        const S = DRAFT ? DRAFT.stages : [];     // 草稿副本的级联；空态下没有草稿，逐级卡清空
+        labOut.stages = S.slice();               // 输出图跟着最新级联走（元素同引用，参数改动即时生效）
         for (const c of labCharts) { const i = charts.indexOf(c); if (i >= 0) charts.splice(i, 1); }
         labCharts.length = 0;
         const host = document.getElementById('labCharts');
         host.innerHTML = '';
-        const last = lab.stages.length;          // 末级索引 = 最后一张图
+        const last = S.length;                  // 末级索引 = 最后一张图
         // 只画第 1..N 级（输入是 grid 的 0 号格，不在这里重复出图）
         for (let k = 1; k <= last; k++) {
-            const st = lab.stages[k - 1];
+            const st = S[k - 1];
             const collapsed = !!st.collapsed;    // 缺省见 labDefaultCollapse：只展开末级
             const card = document.createElement('div');
             card.className = 'lcard' + (collapsed ? ' collapsed' : '');
@@ -612,15 +1228,15 @@
             };
             mkBtn('↑', '上移一级（改变执行顺序）', () => {
                 if (k <= 1) return;
-                [lab.stages[k - 2], lab.stages[k - 1]] = [lab.stages[k - 1], lab.stages[k - 2]];
+                [S[k - 2], S[k - 1]] = [S[k - 1], S[k - 2]];
                 labSync(true);
             }).disabled = k === 1;
             mkBtn('↓', '下移一级（改变执行顺序）', () => {
                 if (k > last) return;
-                [lab.stages[k], lab.stages[k - 1]] = [lab.stages[k - 1], lab.stages[k]];
+                [S[k], S[k - 1]] = [S[k - 1], S[k]];
                 labSync(true);
             }).disabled = k === last;
-            mkBtn('✕', '删除这一级', () => { lab.stages.splice(k - 1, 1); labSync(true); }, 'del');
+            mkBtn('✕', '删除这一级', () => { S.splice(k - 1, 1); labSync(true); }, 'del');
             hd.appendChild(ops);
 
             const body = document.createElement('div');
@@ -638,17 +1254,18 @@
             host.appendChild(card);
 
             const ch = {
-                stages: lab.stages.slice(0, k),       // 前 k 级；元素是同一批对象引用，改参数即时生效
+                stages: S.slice(0, k),             // 前 k 级；元素是同一批对象引用，改参数即时生效
+                stagesRef: S,                      // 记住建卡时的级联数组：折叠/hint 刷新只读它，不依赖当前选中项
                 out: new Float32Array(SFM_PC * CHART_N),
                 w: 0, h: LAB_C_H,
                 cv, ctx: cv.getContext('2d'),
                 card, caret, opEl, enEl: en, selEl: sel, labK: k,
-                hidden: collapsed,                    // 主循环跳过收起的图
+                hidden: collapsed,                 // 主循环跳过收起的图
             };
             caret.addEventListener('click', () => {
                 st.collapsed = !st.collapsed;
                 applyCollapse(ch);
-                labSave();
+                refreshDirty();                                    // 折叠态也是存档内容，跟着草稿走
                 if (!ch.hidden) ch.w = fitCanvas(cv, LAB_C_H);   // 收起时 display:none 无布局宽度，展开必须重量
                 labelLabCharts();                                 // 收起后头部仍要显示 title + 参数 hint
             });
@@ -660,20 +1277,20 @@
         labelLabCharts();
     }
     // 收起态只由各级的 collapsed 决定。
-    // 越界保护：labCharts 与 lab.stages 由 rebuildLabCharts 保持同长，
+    // 越界保护：labCharts 与当前级联由 rebuildLabCharts 保持同长，
     // 这里再兜一层，避免任何漏 rebuild 的路径把整页打挂（标题刷新是纯展示，不该抛异常）
     function applyCollapse(ch) {
-        const st = lab.stages[ch.labK - 1];
+        const st = ch.stagesRef[ch.labK - 1];
         if (!st) { ch.hidden = true; return; }
         ch.card.classList.toggle('collapsed', !!st.collapsed);
         ch.hidden = ch.card.classList.contains('collapsed');
     }
     // 只刷新 hint / 勾选 / skip 标记，不重建 DOM（拖参数滑杆、启停切换时用）
     function labelLabCharts() {
-        labOut.stages = lab.stages.slice();
+        labOut.stages = DRAFT ? DRAFT.stages.slice() : [];
         for (const ch of labCharts) {
             applyCollapse(ch);
-            const st = lab.stages[ch.labK - 1];
+            const st = ch.stagesRef[ch.labK - 1];
             if (!st) continue;
             const fp = Object.entries(st.p).map(([key, v]) => `${key}=${(+v).toFixed(1)}`).join(',');
             ch.opEl.textContent = fp ? `(${fp})` : '—';
@@ -681,23 +1298,50 @@
             ch.card.classList.toggle('skip', !st.on);
         }
     }
+    // 唯一的编辑收口：空态切换 + 刷管道摘要 + 刷"未保存" + 重建或只刷标签
     function labSync(rebuild) {
-        labPipeEl.textContent = pipeSummary(lab);
-        labSave();
+        labEl.classList.toggle('idle', !DRAFT);
+        labEl.classList.toggle('ro', !!(DRAFT && DRAFT.readonly));   // 只读态：不给保存、不给级联编排
+        labPipeEl.textContent = DRAFT ? pipeSummary({ stages: DRAFT.stages }) : '';
+        labOut.hidden = !DRAFT;               // 空态时画布不参与绘制（display:none 画了也白画）
+        refreshDirty();
         if (rebuild) rebuildLabCharts();
         else labelLabCharts();
     }
 
+    // ---- 工具条接线（全部写草稿；左格要等「保存」才动） ----
+    labTitleEl.addEventListener('input', () => {
+        if (!DRAFT || DRAFT.readonly) return;          // 只读格：输入框本就不可编辑，这里再挡一次（防粘贴/程序化赋值）
+        DRAFT.title = labTitleEl.value.slice(0, 60);
+        refreshDirty();                       // 左格标题不动 —— 保存时才写回
+    });
+    labDescEl.addEventListener('input', () => {
+        if (!DRAFT || DRAFT.readonly) return;
+        DRAFT.desc = labDescEl.value.slice(0, 400);
+        refreshDirty();
+    });
+    document.getElementById('labSave').addEventListener('click', saveDoc);
     document.getElementById('labAdd').addEventListener('click', () => {
-        if (lab.stages.length >= 8) return;               // 12 音级 × 250 点，8 级已远超需要
-        const pick = lab.stages.length ? lab.stages[lab.stages.length - 1].id : 'pow';
+        if (!DRAFT || DRAFT.readonly) return;
+        const S = DRAFT.stages;
+        if (S.length >= MAX_STAGES) return;               // 12 音级 × 250 点，8 级已远超需要
+        const pick = S.length ? S[S.length - 1].id : 'pow';
         // 新增的一级默认收起：它在链中间/末尾但不是"末级默认展开"那条，除非整条链只有它
-        lab.stages.push({ id: pick, on: true, p: {}, collapsed: lab.stages.length !== 0 });
+        S.push({ id: pick, on: true, p: {}, collapsed: S.length !== 0 });
         labSync(true);
     });
-    document.getElementById('labClear').addEventListener('click', () => { lab.stages = []; labSync(true); });
+    document.getElementById('labClear').addEventListener('click', () => { if (DRAFT && !DRAFT.readonly) { DRAFT.stages.length = 0; labSync(true); } });
+    // 关闭：干净就直接关，脏的先弹 dialog（原生 dialog 自带 Esc = 取消、点遮罩不关）
+    labCloseEl.addEventListener('click', closeEditor);
+    // 全局播放控制
+    document.getElementById('gPlay').addEventListener('click', () => setAllPaused(!allPaused()));
+    document.getElementById('dlgSave').addEventListener('click', () => { dlg.close(); saveDoc(); commitClose(); });
+    document.getElementById('dlgDrop').addEventListener('click', () => { dlg.close(); drafts.delete(selected); commitClose(); });
+    document.getElementById('dlgCancel').addEventListener('click', () => dlg.close());
+    syncEditorInputs();
     rebuildLabCharts();
-    labPipeEl.textContent = pipeSummary(lab);
+    labSync(true);
+    applyView();          // 起手就按存档里的播放状态冻结（并把快照画回来）
 
     function drawChart(ch) {
         const c = ch.ctx, W = ch.w, H = ch.h;
@@ -758,13 +1402,19 @@
             updateBuffers(dt);
         }
         sfmFillLines();
-        // hidden = 实验台里收起的级：画布 display:none，画了也看不见，白算白画
-        for (const ch of charts) { if (ch.hidden) continue; computeChart(ch, sfmLines); drawChart(ch); }
+        // hidden = 右栏里收起的级：画布 display:none，画了也看不见，白算白画
+        // paused = 用户按了暂停：冻结在这最后一帧上，连 compute 都省了
+        for (const ch of charts) { if (ch.hidden || ch.paused) continue; computeChart(ch, sfmLines); drawChart(ch); }
         requestAnimationFrame(loop);
     }
-    // 所有画布的逻辑宽都随容器实测（含实验台），窗口/缩放变化时逐块重量
+    // 所有画布的逻辑宽都随容器实测（含右栏），窗口/缩放变化时逐块重量。
+    // 重量会重建位图（位图一重建，上一帧就没了）→ 暂停中的画布要把存档里的快照重画回来。
     function refitAll() {
         for (const ch of charts) { if (ch.hidden) continue; ch.w = fitCanvas(ch.cv, ch.h); }
+        for (const ch of charts) {
+            if (ch.hidden || !ch.paused) continue;
+            paintShot(ch);      // 暂停中的画布把存档里的快照重画回位图
+        }
     }
     window.addEventListener('resize', refitAll);
     // 系统缩放变化 / 跨屏拖动（dpr 变化）时重建位图，否则位图按旧 dpr 拉伸 → 文字发虚
@@ -774,6 +1424,18 @@
         else if (mq.addListener) mq.addListener(refitAll);   // 旧版 Safari
     }
     connectSSE();
+    // 文档从服务端拉（异步）：先用出厂配置把 UI 立起来，拿到再整块换掉。
+    // 服务端还没有文档时，把浏览器里的旧 localStorage 存档顶上去（迁移只发生一次）。
+    (async () => {
+        const { doc, migrate } = await loadDocFromServer();
+        if (JSON.stringify(doc) !== JSON.stringify(DOC)) adoptDoc(doc);
+        if (migrate) {
+            storeState = 'load';
+            const ok = await saveDocToServer(migrate);
+            if (ok) adoptDoc(migrate);
+        }
+        refreshDirty();
+    })();
     requestAnimationFrame(loop);
 })();
 </script>

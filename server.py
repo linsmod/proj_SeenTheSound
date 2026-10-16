@@ -555,6 +555,50 @@ def stream():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+# ---- 参数化矩阵页的文档存储：一张 JSON 落在项目目录里 ----
+# 左栏 = 带预览的文件列表，右栏 = 编辑器标签页；保存/读取都走后端，
+# 存档跟着项目走（换浏览器、清缓存都不丢），也方便直接用编辑器/git 看 diff。
+# 落盘用"先写临时文件再改名"的原子替换：写到一半断电不会留下半个坏 JSON。
+DOC_PATH = os.path.join(HERE, "matrix-doc.json")
+
+
+@app.route("/api/doc", methods=["GET"])
+def api_doc_get():
+    """读取整份文档。不存在返回 exists:false（前端退回出厂配置），损坏则返回 500 而不是空文档。"""
+    try:
+        with open(DOC_PATH, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except FileNotFoundError:
+        return jsonify({"exists": False})
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"{DOC_PATH} 不是合法 JSON：{e}"}), 500
+    return jsonify({"exists": True, "doc": doc, "path": DOC_PATH})
+
+
+@app.route("/api/doc", methods=["POST"])
+def api_doc_post():
+    """整份覆盖写回。前端已做清洗，这里只兜住非法 JSON 与超大体积。"""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("charts"), list):
+        return jsonify({"error": "请求体必须是 {charts:[...] }"}), 400
+    if not body["charts"]:
+        return jsonify({"error": "charts 为空，拒绝写入"}), 400
+    tmp = DOC_PATH + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(body, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, DOC_PATH)     # 同目录改名是原子的：读到的要么是旧的完整文档，要么是新的完整文档
+    except OSError as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return jsonify({"error": f"写入失败：{e}"}), 500
+    return jsonify({"ok": True, "path": DOC_PATH, "charts": len(body["charts"])})
+
+
 @app.route("/set_smoothing")
 def set_smoothing():
     try:
