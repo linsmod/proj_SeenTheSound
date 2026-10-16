@@ -1572,7 +1572,7 @@
             sfmPcCtx.fillText(NOTE_NAMES[pc], pc * colW + colW / 2, SPF_H - 3);
         }
         const maxEl = document.getElementById('sfmPcMax');
-        if (maxEl) maxEl.textContent = `acc=AVG window=1s 峰值${maxV.toFixed(2)}`;
+        if (maxEl) maxEl.textContent = `acc=AVG 峰值${maxV.toFixed(2)}`;
         const tileVal = document.getElementById('sfmPcVal');
         if (tileVal) tileVal.textContent = maxV.toFixed(2);
     }

@@ -542,6 +542,12 @@ def index():
     return send_from_directory(HERE, "index.html")
 
 
+@app.route("/matrix")
+def matrix():
+    """参数化矩阵页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
+    return send_from_directory(HERE, "matrix.html")
+
+
 @app.route("/stream")
 def stream():
     return Response(sse_stream(CAP, SPEC),
