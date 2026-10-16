@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- PythonServer · 频谱对照 · 极坐标折线 · 12 列 × 9 音区行 迷你盘 -->
+    <title>STS - Seen the sound, grid and charts</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #080c18;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            padding: 16px 0;
+            font-family: 'Segoe UI', sans-serif;
+            color: #bcc8e8;
+        }
+        .layout {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            width: 100%;
+            max-width: 1300px;
+            padding: 0 16px;
+        }
+        .main { flex: 0 0 auto; }
+        /* 左侧垂直开关列：圆角方块按钮，.on = 开启态 */
+        .toolcol { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
+        .toolcol button {
+            width: 40px; height: 40px; padding: 0;
+            border-radius: 12px; border: 1px solid rgba(255,255,255,0.10);
+            background: #141d34; color: #7286ad;
+            font-size: 12px; font-weight: 600; line-height: 1;
+            cursor: pointer; transition: 0.2s;
+        }
+        .toolcol button.on {
+            background: #263a60; color: #fff;
+            border-color: rgba(255,68,119,0.55);
+            box-shadow: 0 0 10px rgba(255,68,119,0.25);
+        }
+        .toolcol button:hover { background: #3a5a8a; }
+        /* 周期数值瓦片（只读显示，滚轮在 grid 上调节） */
+        .toolcol .toolval {
+            width: 40px; padding: 5px 0 6px;
+            border-radius: 12px; border: 1px solid rgba(255,255,255,0.10);
+            background: #141d34; text-align: center; user-select: none; cursor: ns-resize;
+        }
+        .toolcol .toolval .val {
+            font-size: 13px; font-weight: 700; color: #ff4477;
+            font-variant-numeric: tabular-nums; line-height: 1.2;
+        }
+        .toolcol .toolval .lab { font-size: 10px; color: #7286ad; line-height: 1.2; margin-top: 1px; }
+        /* 周期变化时的边缘提示：粉色描边闪光 */
+        .toolcol .toolval.flash { animation: periodFlash 0.6s ease-out; }
+        @keyframes periodFlash {
+            0%   { border-color: rgba(255,68,119,0.95); box-shadow: 0 0 12px rgba(255,68,119,0.45); }
+            100% { border-color: rgba(255,255,255,0.10); box-shadow: none; }
+        }
+        .container {
+            position: relative;            /* 供 .panel 绝对定位叠在 canvas 上 */
+            background: #0f1628;
+            padding: 12px;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.95), inset 0 0 0 1px rgba(255,255,255,0.05);
+        }
+        canvas {
+            display: block;
+            width: 858px;
+            height: 636px;
+            border-radius: 16px;
+            background: #0a1022;
+            cursor: pointer;
+        }
+        /* grid overlay：只在数据未就绪（连接中/断开/报错）时整块铺出来，
+           遮住并禁止操作底下的格子；接收中整层隐藏，不显示 overlay 也不显示提示 */
+        .panel {
+            display: none;
+            position: absolute;
+            inset: 12px;                  /* = .container 的 padding，正好盖住 canvas */
+            z-index: 2;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background: rgba(10,16,34,0.45);
+            border-radius: 16px;
+            cursor: not-allowed;
+        }
+        .panel.mask { display: flex; }
+        .panel button {
+            padding: 4px 14px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .status {
+            font-size: 12px;
+            color: #8fa2c8;
+        }
+        button {
+            background: #263a60;
+            border: none;
+            color: #fff;
+            padding: 10px 30px;
+            border-radius: 40px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+            font-size: 15px;
+        }
+        button:hover { background: #3a5a8a; box-shadow: 0 0 30px #3a5a8a44; }
+        .controls {
+            width: 858px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 10px;
+            padding: 10px 18px;
+            background: #0f1628;
+            border-radius: 14px;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+            font-size: 12px;
+        }
+        .controls .sep { width: 1px; height: 16px; background: rgba(255,255,255,0.10); flex: none; }
+        .controls label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+        .controls .src {
+            margin-left: auto;
+            color: #5a6c94;
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 400px;
+        }
+        .controls.params { flex-wrap: wrap; row-gap: 8px; }
+        .controls .gpVal {
+            color: #ffaa33; font-weight: 700; min-width: 40px;
+            font-variant-numeric: tabular-nums; text-align: right;
+        }
+        .controls input[type="text"] {
+            background: #141d34; border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 6px; color: #bcc8e8; padding: 4px 8px;
+            font-size: 12px; width: 160px;
+        }
+        .sidebar {
+            flex: 1 1 400px;
+            align-self: flex-start;
+            position: sticky;
+            top: 16px;
+            min-width: 360px;
+            max-width: 420px;
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            scrollbar-gutter: stable;
+            background: #0f1628; padding: 12px; border-radius: 14px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.95), inset 0 0 0 1px rgba(255,255,255,0.05);
+        }
+        /* （门控参数面板样式已移除） */
+        .side-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .side-head .t { font-weight: 700; font-size: 14px; color: #bcc8e8; }
+        /* 侧栏图表读数（此前 gpVal 只有 .controls 下的规则，侧栏内落到默认 16px） */
+        .side-head .gpVal, .side-env-head .gpVal {
+            font-size: 11px; font-weight: 400; color: #8fa2c8; min-width: 0;
+            font-variant-numeric: tabular-nums; text-align: right;
+        }
+        .side-head .hint { font-size: 11px; color: #5a6c94; }
+        .side-head button { padding: 4px 12px; font-size: 12px; border-radius: 20px; }
+        #chartCanvas { display: block; width: 100%; height: 144px; background: #0a1022; border-radius: 8px; touch-action: none; }
+        #totCanvas { display: block; width: 100%; height: 144px; background: #0a1022; border-radius: 8px; }
+        #sfmPcCanvas { display: block; width: 100%; height: 90px; background: #0a1022; border-radius: 8px; }
+        #sfmCurveCanvas { display: block; width: 100%; height: 120px; background: #0a1022; border-radius: 8px; }
+        /* （包络预览样式已移除） */
+        /* 图例行（色块 + 短标签）与 (i) 信息图标 */
+        .legend-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin: 6px 0; font-size: 11px; color: #8fa2c8; }
+        .legend-row .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
+        .legend-row .sw.dash { border-top-style: dashed; }
+        .info-i {
+            display: inline-flex; align-items: center; justify-content: center; flex: none;
+            width: 14px; height: 14px; border-radius: 50%;
+            background: #263a60; color: #8fa2c8; font-size: 10px; font-style: italic;
+            font-weight: 700; cursor: help; user-select: none;
+        }
+        .side-readout { margin: 0 0 4px; font-size: 11px; color: #8fa2c8; font-variant-numeric: tabular-nums; }
+        .side-env-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #bcc8e8; }
+    </style>
+</head>
+<body>
+<div class="layout">
+<div class="toolcol">
+    <button id="tglBin" class="on" title="bin 圆点叠加层">bin</button>
+    <button id="tglSub" class="on" title="阈值外的线（灰）">阈外</button>
+    <button id="tglHist" class="on" title="有色轨迹T2的残迹（灰），长周期更容易看见">残迹</button>
+    <button id="aweightToggle" class="on" title="A计权（IEC 61672）开启会抑制低频">A权</button>
+    <div class="toolval" id="periodTile" title="窗口周期：滚轮调整（Shift ×10）/ 中键恢复默认">
+        <div class="val" id="periodTileVal">4.00s</div>
+        <div class="lab">周期</div>
+    </div>
+    <div class="toolval" id="a4Tile" title="音准参考 A4：滚轮步进 5Hz（Shift ×10 = 50Hz / Ctrl ×0.1 = 0.5Hz）/ 点击 440↔432 / 中键恢复 440。影响前端 bin→音 映射、键频显示与后端 CQT 栅格">
+        <div class="val" id="a4TileVal">440.0</div>
+        <div class="lab">A4</div>
+    </div>
+    <div class="toolval" id="sfmPcTile" title="各音级谱平坦度：0=纯音 1=白噪（写入时冻结）">
+        <div class="val" id="sfmPcVal">--</div>
+        <div class="lab">SFM</div>
+    </div>
+    <div class="toolval" id="sfmWinTile" title="平坦度时间窗：滚轮调整（Shift ×10）/ 中键恢复默认 0.20s">
+        <div class="val" id="sfmWinVal">0.20s</div>
+        <div class="lab">平坦窗</div>
+    </div>
+</div>
+<div class="main">
+<div class="container">
+    <canvas id="canvas" width="858" height="636"></canvas>
+    <!-- 未就绪浮层（.mask 时整块铺满 grid、屏蔽操作）：仅连接中/断开/报错时显示，接收中整层隐藏 -->
+    <div class="panel mask">
+        <div class="status" id="statusIndicator">⏳ 连接 Python 后端 ...</div>
+        <button id="reconnectBtn">🔄 重连</button>
+    </div>
+</div>
+<!-- 原页面展示的说明文字已移至此处注释，不在页面显示：
+  🧪 Python 版 · 频谱由 numpy 生成（FFT 线性 bin / CQT 对数 bin）经 SSE 推送 · 显示为 A 计权响度（后端 --no-aweight 可看物理 dB）
+  ⏱ 每盘180点 · 12 列（十二平均律音级 C…B，A4=440Hz，1点钟=C 顺时针至 12点钟=B，每盘只取落在该音级的频谱 bin；CQT 每半音 3 bin，低频不再失真；幅度为 A 计权响度，低音随人耳感知下降）× 9 行（音区按 MIDI 键位精确平铺、互不重叠不累加：首尾 A0–B0（3 键）/ C8（1 键）两个残缺区 + C1–B1 … C7–B7 七个完整八度区；钢琴仅 88 键，每键独立成位，无键的格子不画圈；如需前后再加分区，往 ZONE_DEFS 首尾插行即可，超范围区自动留空）· 幅度 Amp 0.25~1：低于 0.25 不画，越高越靠圆心；阈值圆内用阈值线色、圆外彩色
+  图例：4s/圈 · 12 列 × 9 行 grid：7 个完整八度区 + 首尾 A0–B0 / C8 残缺区，88 键各自独立成位（不并入首尾、不跨区累加），无键的格子不画圈 · 迷你盘保留3圈：最新1圈彩色，上1圈渐灰，第3圈起不画
+-->
+<div class="controls">
+    <label style="display:none;">窗口周期
+        <input type="range" id="periodSlider" min="0.02" max="5" step="0.01" value="0.04" style="width:120px; accent-color:#ff4477; cursor:pointer;">
+        <span id="periodVal" style="color:#ff4477; font-weight:700; min-width:44px;">4.0s</span>
+    </label>
+    <span class="src" id="srcInfo">--</span>
+</div>
+</div><!-- /.main -->
+<aside class="sidebar" id="sidebar">
+    <div class="side-head">
+        <span class="t" id="sideTitle">未选择 · 按全盘计算</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+            <span class="gpVal" id="chartVal" style="min-width:0;">--</span>
+            <span class="info-i" title="采样 50Hz × 5s。单格：灰线=原始幅度，彩线=门控后（盘面显示值），黄线=点亮时贡献（未点亮为0）。多选/未选择/列/行/全盘：亮线=所选格子最大值，暗线=中位值，黄线=点亮格最大贡献。紫虚线=彩色阈值 T（上下拖动调整，中键重置），仅对之后的采样生效。">i</span>
+        </span>
+    </div>
+    <div class="legend-row" id="chartLegendOne">
+        <span><span class="sw" style="border-color:#d6dee8;"></span>原始</span>
+        <span><span class="sw" style="border-color:#4ae0ff;"></span>门控后</span>
+        <span><span class="sw" style="border-color:#ffaa33;"></span>双阈余晖点亮</span>
+        <span><span class="sw dash" style="border-color:#c084ff;"></span>阈值T</span>
+    </div>
+    <div class="legend-row" id="chartLegendMulti" style="display:none;">
+        <span><span class="sw" style="border-color:#4ae0ff;"></span>最大值</span>
+        <span><span class="sw" style="border-color:#8fa2c8;"></span>中位值</span>
+        <span><span class="sw" style="border-color:#ffaa33;"></span>双阈余晖点亮</span>
+        <span><span class="sw dash" style="border-color:#c084ff;"></span>阈值T</span>
+    </div>
+    <canvas id="chartCanvas" width="376" height="144"></canvas>
+    <div class="side-total" style="margin-top:12px;">
+        <div class="side-env-head">
+            <span id="totTitle">全盘 88 · 总量走势</span>
+            <span class="info-i" title="三条线按所选范围求和（未选择=全盘）：灰=原始总量，青=门控后总量，橙=点亮（color door+threshold+余晖）格子的贡献。量坐标下限随范围（全盘60/行列20/单格2）且只增不减。">i</span>
+        </div>
+        <div class="legend-row" style="margin:2px 0 4px;">
+            <span><span class="sw" style="border-color:#d6dee8;"></span>原始</span>
+            <span><span class="sw" style="border-color:#4ae0ff;"></span>门控后</span>
+            <span><span class="sw" style="border-color:#ffaa33;"></span>双阈余晖点亮</span>
+        </div>
+        <div class="side-readout" id="totVal">--</div>
+        <canvas id="totCanvas" width="376" height="144"></canvas>
+    </div>
+    <div class="side-total" style="margin-top:12px;">
+        <div class="side-env-head">
+            <span>音级平坦度</span>
+            <span style="display:flex; align-items:center; gap:6px;">
+                <span class="gpVal" id="sfmPcMax" style="min-width:0;">--</span>
+                <span class="info-i" title="每音级一柱：该音级 bin 的谱平坦度（0=纯音 1=白噪），写入时冻结；柱高=当前值（显示端轻平滑），峰=十二音级中最高。">i</span>
+            </span>
+        </div>
+        <canvas id="sfmPcCanvas" width="376" height="90"></canvas>
+    </div>
+    <div class="side-total" style="margin-top:12px;">
+        <div class="side-env-head">
+            <span>音级平坦度曲线</span>
+            <span style="display:flex; align-items:center; gap:6px;">
+                <span class="gpVal" style="color:#c084ff; font-weight:400;">0~1 · 5s</span>
+                <span class="info-i" title="每音级一条 5s 走势线（0=纯音 1=白噪），线色=音级色；时间窗由左侧「窗」瓦片控制。">i</span>
+            </span>
+        </div>
+        <canvas id="sfmCurveCanvas" width="376" height="120"></canvas>
+    </div>
+</aside>
+</div><!-- /.layout -->
+
+<script>
+(function() {
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusDiv = document.getElementById('statusIndicator');
+    // grid overlay：数据未就绪（连接中/断开/报错）→ 加 .mask 整块铺出并屏蔽 grid 操作；
+    // 接收中 → 去掉 .mask，整层 display:none，既不显示 overlay 也不显示提示
+    const panelEl = document.querySelector('.panel');
+    function setStatus(text, blocking) {
+        statusDiv.innerText = text;
+        panelEl.classList.toggle('mask', !!blocking);
+    }
+
+    // 窗口周期滑块绑定：直接改 dials[0].period（updateBuffers 每次都实时读取）
+    const periodSlider = document.getElementById('periodSlider');
+    const periodVal = document.getElementById('periodVal');
+    var update = function(periodSlider){
+        const newPeriod = parseFloat(periodSlider.value);
+        dials[0].period = newPeriod;
+        periodVal.innerText = newPeriod.toFixed(2) + 's';
+        const tileVal = document.getElementById('periodTileVal');   // 左侧周期瓦片同步
+        if (tileVal) tileVal.textContent = newPeriod.toFixed(2) + 's';
+        // 数值变化 → 瓦片边缘闪一下（重启动画以支持连续滚轮调节）
+        const tile = document.getElementById('periodTile');
+        if (tile && newPeriod !== update._last) {
+            update._last = newPeriod;
+            tile.classList.remove('flash');
+            void tile.offsetWidth;   // 强制重排，动画可连续重触发
+            tile.classList.add('flash');
+        }
+        // 清空各缓冲的时间累积，避免周期缩短后 while 循环突发补写多个点
+        semiBuffers.forEach(bufRow => bufRow.forEach(buf => { buf.accumTime = 0; }));
+    }
+    periodSlider.addEventListener('input', () => {
+        update(periodSlider);
+    });
+
+    const W = 858, H = 636;
+
+    // ---------- 高分屏适配（文字/线条发虚的主因） ----------
+    // 位图固定 860×560 时，系统缩放 125%/150%、浏览器缩放、跨屏拖动都会使
+    // devicePixelRatio>1，位图被整体拉伸 → 文字发虚。
+    // 解决：位图 = 逻辑尺寸 × dpr，ctx.setTransform(dpr,...) 缩放后逻辑坐标仍用 W/H。
+    let canvasDPR = 1;
+    function fitCanvas() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3)); // 封顶 3x，防 4K/5K 屏过量重绘
+        const bw = Math.round(W * dpr), bh = Math.round(H * dpr);
+        if (canvas.width === bw && canvas.height === bh) return;
+        canvasDPR = dpr;
+        canvas.width = bw;   // 改属性会重置 transform，必须在赋值后重新 setTransform
+        canvas.height = bh;
+        canvas.style.width = W + 'px';  // 锁定 CSS 尺寸，防止位图放大撑破布局
+        canvas.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.textRendering = 'geometricPrecision'; // 文本按几何精度渲染（不支持的浏览器自动忽略）
+    }
+    fitCanvas();
+    // 系统缩放变化 / 跨屏拖动（dpr 变化）时重建位图并重绘
+    if (window.matchMedia) {
+        const mq = window.matchMedia(`(resolution: ${(window.devicePixelRatio || 1)}dppx)`);
+        const onDprChange = () => { fitCanvas(); fitChart(); fitTot(); fitSpf(); fitSfmCurve(); drawAll(); };
+        if (mq.addEventListener) mq.addEventListener('change', onDprChange);
+        else if (mq.addListener) mq.addListener(onDprChange); // 旧版 Safari
+    }
+    window.addEventListener('resize', () => { fitCanvas(); fitChart(); fitTot(); fitSpf(); fitSfmCurve(); drawAll(); });
+
+    // 12 列（十二音级）× 9 行（音区）grid：每格一个迷你极坐标盘
+    // 列 = 十二平均律音级（C…B）横排；行 = 音区（A0 … C8）竖排
+    // 行数 = ZONE_DEFS.length（见下方音区配置）：7 个完整八度区 + 首尾 A0–B0 / C8 两个残缺区
+    const SEMI_N = 12;                 // 列数 = 十二音点位数
+    const ZONE_N = 9;                  // 行数 = 音区数
+    const MARGIN_L = 76;               // 左侧音区标签留宽
+    const MARGIN_T = 46;               // 顶部音名列留高
+    const PAD_R = 14, PAD_B = 14;
+    const CELL = 64;                   // 正方形格子边长：76 + 12×64 + 14 = 858，46 + 9×64 + 14 = 636
+    const CELL_W = CELL, CELL_H = CELL;
+    const MINI_R = 24;                 // 迷你表盘半径（64×64 格内，直径 48，四周留 8px）
+    // 单一幅度行（不再分多段 ROWS）：Amp 0.25~1，区间外贴边
+    // color_threshold：显示高度 v 低于它 → 用阈值虚线同色（THRESH_COLOR），高于才用音级配色（相对区间 0~1）
+    // color_threshold_post / _post_sec：音被激活（v 越过 color_threshold）时把更低的 post 阈值“绑定”到
+    //   该音上，持续 _post_sec 秒；绑定存续期间改用 post 阈值判定（余晖，衰减段不再在 0.35 附近来回断色）。
+    //   激活可重入 → 每次重入把到期时间刷新为 now + _post_sec；到期自动解绑回 color_threshold。
+    //   绑定只降门槛：跌破 post 的点仍画 THRESH_COLOR 灰。
+    const AMP_ROW = {
+        lo: 0.25, hi: 1, label: 'Amp', color: '#4ae0ff',
+        color_threshold: 0.6, color_threshold_post: 0.25, color_threshold_post_sec: 2
+    };
+    // 彩色阈值虚线的颜色；被阈值抑制的点也用它（两者同色）
+    const THRESH_COLOR = 'rgba(255,255,255,0.20)';
+    // 十二音配色：OKLCH 均匀亮度——色相仍按音级 30° 均分，但亮度 L、彩度 C 恒定，
+    // 消除 HSL 下黄/绿偏亮、蓝/紫偏暗的感知差异（所有音级肉眼等亮）。
+    // 手写 OKLCH→sRGB 转换输出 rgb()，不依赖浏览器 CSS Color 4 支持。
+    // 想整体调亮/调暗改 SEMI_L（0~1），调鲜艳度改 SEMI_C。
+    const SEMI_L = 0.75, SEMI_C = 0.13;
+    function oklchRgb(L, C, Hdeg) {
+        const h = Hdeg * Math.PI / 180;
+        const A = C * Math.cos(h), B = C * Math.sin(h);
+        const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+        const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+        const s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3;
+        const gm = (x) => { x = Math.max(0, Math.min(1, x)); return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055; };
+        return [
+            Math.round(gm(+4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) * 255),
+            Math.round(gm(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) * 255),
+            Math.round(gm(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s) * 255)
+        ];
+    }
+    const SEMI_RGB = Array.from({ length: SEMI_N }, (_, i) => oklchRgb(SEMI_L, SEMI_C, i * 30));
+    const SEMI_COLORS = SEMI_RGB.map(([r, g2, b2]) => `rgb(${r},${g2},${b2})`);
+    // 彩色线径向透明度：小圆边缘 α=0.2 → 圆心 α=1，越靠中心越不透明；
+    // 色相/饱和度/亮度恒定（同音级同色），与阈值无关
+    const ALPHA_MIN = 0.4;   // 小盘彩色线最边缘的透明度下限（用户可调）
+
+    // ---------- 音区分频配置：按 MIDI 键位精确平铺，互不重叠、不累加 ----------
+    // 钢琴仅 88 键（MIDI 21–108）。原版把 A0/A#0/B0 并进首区（A0–B1）、C8 并进尾区（C7–C8），
+    // 同音级会被跨八度累加；现在首尾各拆出独立残缺区，每键只归一个区，88 键各自独立成位。
+    // 如需前后再加分区，直接往 ZONE_DEFS 首尾插行即可；超出 21–108 的区没有键，该行整体不画圈。
+    const keyHz = (midi) => A4 * Math.pow(2, (midi - 69) / 12);  // 十二平均律键频（随 A4 参考取值）
+    const KEY_LO = 21, KEY_HI = 108;    // 88 键范围（A0–C8）
+    const ZONE_DEFS = [
+        { name: 'A0', loMidi: 21,  hiMidi: 23  },  // A0–B0（3 键，残缺低区：仅 A/A#/B 三列有圈）
+        { name: 'C1', loMidi: 24,  hiMidi: 35  },
+        { name: 'C2', loMidi: 36,  hiMidi: 47  },
+        { name: 'C3', loMidi: 48,  hiMidi: 59  },
+        { name: 'C4', loMidi: 60,  hiMidi: 71  },
+        { name: 'C5', loMidi: 72,  hiMidi: 83  },
+        { name: 'C6', loMidi: 84,  hiMidi: 95  },
+        { name: 'C7', loMidi: 96,  hiMidi: 107 },  // C7–B7（完整八度）
+        { name: 'C8', loMidi: 108, hiMidi: 108 }   // C8（1 键，残缺高区：仅 C 一列有圈）
+    ];
+    function bandRange(idx) {
+        const z = ZONE_DEFS[idx];
+        return [keyHz(z.loMidi), keyHz(z.hiMidi)];
+    }
+    // 十二平均律音级映射（A4 = 440Hz，音级 0=C … 11=B）
+    let A4 = 440;   // 音准参考（左侧开关可切 440/432）：bin→音 映射与键频显示都用它
+    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    function pitchClassOfFreq(f) {
+        const midi = 69 + 12 * Math.log2(f / A4); // A4 = MIDI 69
+        return ((Math.round(midi) % 12) + 12) % 12;
+    }
+    const bands = ZONE_DEFS;
+    // 每个（音区 × 音级）格子是否有真实琴键：仅统计 88 键范围内 MIDI%12===pc 的键。
+    // 残缺区（A0–B0 仅 A/A#/B，C8 仅 C）与超范围区的空格子不画圈。
+    const zoneHasKey = ZONE_DEFS.map(z => {
+        const has = new Array(SEMI_N).fill(false);
+        for (let m = Math.max(z.loMidi, KEY_LO); m <= Math.min(z.hiMidi, KEY_HI); m++) {
+            has[((m % 12) + 12) % 12] = true;
+        }
+        return has;
+    });
+
+    // 等响度由后端 A 计权（IEC 61672）按 bin 中心频率逐点修正，取代原版每音区 boost 滑块：
+    // boost 每区只有一个标量，表达不了八度内的 A 曲线斜率，且需手调
+    // （如需手动微调某音区，在 getPitchClassAmplitude 里乘一个每区常量即可）
+
+    // 音符 MIDI → 所属行（zone）：drawBinScatter 用它按"音符"而不是"频率中点"定行，
+    // 与音级 pc 的口径一致（B+2/3 这类偏上半音的 bin 不会再被挪到下一行）
+    const noteRow = new Array(128).fill(-1);
+    ZONE_DEFS.forEach((z, b) => {
+        for (let m = z.loMidi; m <= z.hiMidi; m++) noteRow[m] = b;
+    });
+
+    // ---------- 时间窗口配置 ----------
+    const dials = [
+        { period: 4.0, color: '#ff4477', label: '4s', radiusScale: 0.9, phase: 0 }
+    ];
+
+    const POINTS = 180; // 每圈点数（一圈 = 一个窗口周期）
+    // 迷你盘历史缓冲保存 HISTORY_CYCLES 圈数据；渲染时按“年龄圈数”衰减：
+    // 最新一圈按原规则（过阈值彩色 / 未过用阈值线色），上一圈整体渐灰，第 DROP_CYCLE 圈起不画
+    const HISTORY_CYCLES = 2; // 第 1 圈彩色 → 第 2 圈灰 → 第 3 圈消失
+    const FADE_CYCLE = 1;     // 第 2 圈（ageCycle===1）整体渐灰
+    const DROP_CYCLE = 2;     // 第 3 圈起（ageCycle>=2）不绘制
+
+    // ---------- 点击格子 → 右侧 5 秒线性图（非极化） ----------
+    // 固定 50Hz 采样最近 5 秒，与盘面周期滑块无关（盘面一圈时长可调，这里恒定 5s）。
+    // 原始幅度与门增益分开存，绘制时相乘得到“实际显示值”，可直接看出门控行为。
+    const CHART_SEC = 5, CHART_HZ = 50;
+    const CHART_N = CHART_SEC * CHART_HZ;   // 250 点
+    const CHART_DT = 1 / CHART_HZ;
+    const CHART_W = 376, CHART_H = 144;
+    const CPAD = { L: 30, R: 8, T: 8, B: 16 };   // 线性图内边距（drawChart 与阈值线命中判定共用）
+
+    // 十二音迷你表盘数据：9 音区 × 12 半音，每个小盘只存自己半音范围的能量起伏
+    const semiBuffers = bands.map((_, bIdx) =>
+        Array.from({ length: SEMI_N }, () => ({
+            data: new Float32Array(POINTS * HISTORY_CYCLES).fill(0),
+            writeIdx: 0,
+            accumTime: 0,
+            filled: false
+        }))
+    );
+    // 余晖绑定：按音符（MIDI）记录 post 阈值的到期时刻（秒，performance.now 时基），0 = 未绑定/已解绑
+    const notePostUntil = new Float64Array(128);
+    const nowSec = () => performance.now() / 1000;
+    // 彩色线径向渐变缓存（按音符）：坐标/半径/阈值变化时自动重建，无需在 resize 时手动清
+    const gradCache = new Array(128).fill(null);
+    update(periodSlider);
+
+    // 5 秒线性图数据：原始幅度 / 门增益 各 108 格 × 250 点，共用一个写指针（同步采样）
+    const chartRaw = bands.map(() => Array.from({ length: SEMI_N }, () => new Float32Array(CHART_N)));
+    const chartGate = bands.map(() => Array.from({ length: SEMI_N }, () => new Float32Array(CHART_N)));
+    // 激活量（颜色被点亮键的门控后合计）：写入采样时判定并冻结，历史值不随左移重算
+    const chartAct = new Float32Array(CHART_N);            // 每采样点的激活总量（环形）
+    const chartLit = new Uint8Array(CHART_N * ZONE_N * SEMI_N); // 每采样逐键点亮标志（冻结，索引 idx*88+k）
+    // 谱平坦度统计量（写入时冻结）：每采样 × 13 通道（0=全局 88 键频段, 1..12=音级）的 Σln(m)、Σm、n。
+    // SFM 不按单点计算，而是显示端按可调时间窗（sfmWinK 个采样）滑窗合成：exp(ΣΣln/Σn)/(ΣΣm/Σn)。
+    // K=1 即单帧（约 1s CQT 分析窗），K 越大越平滑；底层音频窗由后端决定（CQT 1s）。
+    const SFM_CH = 13;
+    const sfmSl = new Float64Array(CHART_N * SFM_CH);
+    const sfmSa = new Float64Array(CHART_N * SFM_CH);
+    const sfmN  = new Float32Array(CHART_N * SFM_CH);
+    let sfmWinK = 10;                                      // 平坦度时间窗（采样数，50Hz）
+    const sfmLines = new Float32Array(SFM_CH * CHART_N);   // 每帧按窗口合成的显示曲线缓存
+    function sfmFillLines() {
+        for (let ch = 0; ch < SFM_CH; ch++) {
+            let sl = 0, sa = 0, n = 0;
+            const base = ch * CHART_N;
+            for (let p = 0; p < chartCount; p++) {
+                const o = ((chartWrite + p) % CHART_N) * SFM_CH + ch;
+                sl += sfmSl[o]; sa += sfmSa[o]; n += sfmN[o];
+                const old = p - sfmWinK;
+                if (old >= 0) {
+                    const oo = ((chartWrite + old) % CHART_N) * SFM_CH + ch;
+                    sl -= sfmSl[oo]; sa -= sfmSa[oo]; n -= sfmN[oo];
+                }
+                sfmLines[base + p] = n ? Math.exp(sl / n) / (sa / n) : 0;
+            }
+        }
+    }
+    const pcSl = new Float64Array(12), pcSa = new Float64Array(12), pcNb = new Uint16Array(12); // 逐 pc 累计器
+    const SFM_SPAN = 70;   // 后端字节→dB 映射跨度（MIN_DB -100 / MAX_DB -30）；SFM 对偏移不敏感、对此跨度敏感
+    const KEY_LOHZ = keyHz(KEY_LO), KEY_HIHZ = keyHz(KEY_HI);   // 88 键频段（谱平坦度统计范围）
+    const keyLitUntil = new Float64Array(ZONE_N * SEMI_N); // 逐键余晖到期点（绝对采样序）
+    let chartAbsN = 0;                                     // 绝对采样计数（余晖到期基准）
+    // 激活判定：与盘面显色同口径。主阈值每次判定时实时读 AMP_ROW.color_threshold
+    // （可在预览图拖动），post/时长为常量
+    const ACT_POST = AMP_ROW.color_threshold_post;
+    const ACT_POST_N = (AMP_ROW.color_threshold_post_sec || 0) * CHART_HZ;
+    const actToV = (raw) => Math.max(0, Math.min(1, (raw - AMP_ROW.lo) / (AMP_ROW.hi - AMP_ROW.lo)));
+    let chartWrite = 0;       // 下一写入位置 = 最旧样本
+    let chartCount = CHART_N; // 窗口始终为满 5 秒（滚动示波器式）：从第一帧起就匀速，无“从右往左生长/追赶”
+    let chartAccum = 0;
+    const lastRaw = bands.map(() => new Array(SEMI_N).fill(0));
+    const lastGate = bands.map(() => new Array(SEMI_N).fill(1));
+    let selected = null;      // 当前选择 {type:'cell'|'col'|'row'|'all'|'multi', ...}；null = 未选择（图表按全盘计算）
+    // 默认格子 = 中央 C：C4 区（ZONE_DEFS 索引 4）× 音级 C → MIDI 60
+    // ---------- 输入源：Python 后端 SSE（唯一与原版不同的部分，替代 AnalyserNode） ----------
+    let isRunning = false;
+    let animationId = null;
+    let lastTimestamp = 0;
+    let es = null;              // EventSource
+    const srcInfo = document.getElementById('srcInfo');
+
+    // ---------- 从 SSE 帧获取频谱（对应原版 refreshSpectrum 的读数部分） ----------
+    let freqData = null; // 预分配，避免每帧新建数组（由 es.onmessage 填充）
+    // 逐格 onset 门增益：9×12 字节（行主序 z*12+pc，与后端 OnsetGate 输出一致）。
+    // null = 后端未启用门控（--no-gate）或未收到，乘 1 全通。
+    // （页面上的门控 UI 已移除：门控完全由后端控制，增益照常应用到显示）
+    let gateData = null;
+
+    // ---------- 左侧开关列：1 bin 圆点叠加层，2 阈值外的线（灰） ----------
+    // 偏好存 localStorage，刷新保持；绘制函数每帧读这两个标志
+    let showBinDots = true, showSubThresh = true, showHistGray = true;
+    try {
+        showBinDots = localStorage.getItem('showBinDots') !== '0';
+        showSubThresh = localStorage.getItem('showSubThresh') !== '0';
+        showHistGray = localStorage.getItem('showHistGray') !== '0';
+    } catch (e) {}
+    function bindToggle(id, get, set) {
+        const el = document.getElementById(id);
+        el.classList.toggle('on', get());
+        el.addEventListener('click', () => {
+            set(!get());
+            el.classList.toggle('on', get());
+        });
+    }
+    bindToggle('tglBin', () => showBinDots, (v) => {
+        showBinDots = v;
+        try { localStorage.setItem('showBinDots', v ? '1' : '0'); } catch (e) {}
+    });
+    bindToggle('tglSub', () => showSubThresh, (v) => {
+        showSubThresh = v;
+        try { localStorage.setItem('showSubThresh', v ? '1' : '0'); } catch (e) {}
+    });
+    bindToggle('tglHist', () => showHistGray, (v) => {
+        showHistGray = v;
+        try { localStorage.setItem('showHistGray', v ? '1' : '0'); } catch (e) {}
+    });
+
+    // ---------- 平坦度时间窗瓦片：滚轮调整（Shift ×10）/ 中键恢复默认 ----------
+    // 窗口 K 个采样（50Hz）在冻结的 Σln/Σm 统计量上滑窗合成 SFM；
+    // 有效音频窗 = 后端分析窗（CQT 1s）+ K×20ms，越大越平滑、越不敏感瞬态
+    const sfmWinTileEl = document.getElementById('sfmWinTile');
+    const sfmWinValEl = document.getElementById('sfmWinVal');
+    const SFM_WIN_DEF = 0.2;               // 出厂默认 0.20s（10 个采样）
+    let sfmWinSec = SFM_WIN_DEF;
+    try { sfmWinSec = parseFloat(localStorage.getItem('sfmWin')) || SFM_WIN_DEF; } catch (e) {}
+    sfmWinSec = Math.min(5, Math.max(0.02, sfmWinSec));
+    function sfmWinSync() {
+        sfmWinK = Math.max(1, Math.min(CHART_N, Math.round(sfmWinSec * CHART_HZ)));
+        sfmWinValEl.textContent = (sfmWinK / CHART_HZ).toFixed(2) + 's';
+        try { localStorage.setItem('sfmWin', String(sfmWinSec)); } catch (e) {}
+    }
+    sfmWinSync();
+    sfmWinTileEl.addEventListener('wheel', (ev) => {
+        ev.preventDefault();
+        if (!ev.deltaY) return;
+        const dir = ev.deltaY < 0 ? 1 : -1;   // 向上滚 = 窗口增大（更平滑）
+        sfmWinSec = Math.min(5, Math.max(0.02, sfmWinSec + dir * 0.1 * (ev.shiftKey ? 10 : 1)));
+        sfmWinSync();
+    }, { passive: false });
+    sfmWinTileEl.addEventListener('pointerdown', (ev) => {
+        if (ev.button === 1) { sfmWinSec = SFM_WIN_DEF; sfmWinSync(); ev.preventDefault(); }
+    });
+    sfmWinTileEl.addEventListener('mousedown', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+
+    // ---------- 音准参考 A4：点击 440/432 快切，滚轮细调（0.5Hz，Shift ×10 = 5Hz），中键恢复 440 ----------
+    // 影响：bin→音 映射（ensurePitchClassBins 缓存键含 A4，变更后自动重建）、
+    // bin 散点定位、键频显示（keyHz）、后端 CQT 栅格与门控映射（/set_a4 防抖推送）。
+    const A4_DEF = 440, A4_MIN = 400, A4_MAX = 480;
+    let a4Ref = A4_DEF;
+    try { a4Ref = parseFloat(localStorage.getItem('a4Ref')) || A4_DEF; } catch (e) {}
+    a4Ref = Math.min(A4_MAX, Math.max(A4_MIN, a4Ref));
+    const a4Tile = document.getElementById('a4Tile');
+    const a4TileVal = document.getElementById('a4TileVal');
+    let a4SendTimer = null;
+    function a4Flash() {
+        a4Tile.classList.remove('flash');       // 与周期瓦片同款边缘闪光提示
+        void a4Tile.offsetWidth;
+        a4Tile.classList.add('flash');
+    }
+    function a4Sync() {
+        A4 = a4Ref;
+        a4TileVal.textContent = a4Ref.toFixed(1);   // 恒一位小数，避免整数/小数切换时文字跳动
+        try { localStorage.setItem('a4Ref', String(a4Ref)); } catch (e) {}
+        // 防抖推送后端（CQT 栅格 + 门控映射重建有开销，滚轮连发时合并为一次）
+        clearTimeout(a4SendTimer);
+        a4SendTimer = setTimeout(() => fetch(`/set_a4?v=${a4Ref}`).catch(() => {}), 150);
+    }
+    A4 = a4Ref;
+    a4TileVal.textContent = a4Ref.toFixed(1);
+    a4Tile.addEventListener('click', () => {
+        a4Ref = a4Ref === 440 ? 432 : 440;
+        a4Sync(); a4Flash();
+    });
+    a4Tile.addEventListener('wheel', (ev) => {
+        ev.preventDefault();
+        if (!ev.deltaY) return;
+        const dir = ev.deltaY < 0 ? 1 : -1;   // 向上滚 = 频率升高
+        const mult = ev.shiftKey ? 10 : (ev.ctrlKey ? 0.1 : 1);   // Shift ×10 / Ctrl ×0.1 细调
+        a4Ref = Math.min(A4_MAX, Math.max(A4_MIN, a4Ref + dir * 5 * mult));
+        a4Sync(); a4Flash();
+    }, { passive: false });
+    a4Tile.addEventListener('pointerdown', (ev) => {
+        if (ev.button === 1) { a4Ref = A4_DEF; a4Sync(); a4Flash(); ev.preventDefault(); }
+    });
+    a4Tile.addEventListener('mousedown', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+    // 启动对齐：后端当前值与本地偏好不一致时，把本地偏好推给后端（后端重启回 440 的场景）
+    fetch('/set_a4').then(r => r.json()).then(p => {
+        if (p.a4 && Math.abs(p.a4 - a4Ref) > 0.01) {
+            fetch(`/set_a4?v=${a4Ref}`).catch(() => {});
+        }
+    }).catch(() => {});
+
+    // ---------- A 计权开关：改后端字节频谱的响度修正（/set_aweight），勾选切换无重连、即时生效 ----------
+    // 偏好存 localStorage，刷新后保持；启动时以后端当前值为准（后端可能带 --no-aweight 启动）
+    let aweightEnabled = true;
+    try { aweightEnabled = localStorage.getItem('aweightEnabled') !== '0'; } catch (e) {}
+    const aweightToggle = document.getElementById('aweightToggle');
+    aweightToggle.classList.toggle('on', aweightEnabled);
+    aweightToggle.addEventListener('click', () => {
+        aweightEnabled = !aweightEnabled;
+        aweightToggle.classList.toggle('on', aweightEnabled);
+        try { localStorage.setItem('aweightEnabled', aweightEnabled ? '1' : '0'); } catch (e) {}
+        fetch(`/set_aweight?v=${aweightEnabled ? 1 : 0}`).then(r => r.json()).then(p => {
+            aweightEnabled = !!p.aweight;      // 以后端返回为准（越界/异常时自校正）
+            aweightToggle.classList.toggle('on', aweightEnabled);
+        }).catch(() => {});
+    });
+    fetch('/set_aweight').then(r => r.json()).then(p => {
+        aweightEnabled = !!p.aweight;
+        aweightToggle.classList.toggle('on', aweightEnabled);
+        try { localStorage.setItem('aweightEnabled', aweightEnabled ? '1' : '0'); } catch (e) {}
+    }).catch(() => {});   // 后端未起/旧版无此端点：保持本地偏好
+
+    // 每 bin 中心频率表：CQT 后端直发对数等距表（每半音 1 bin）；FFT 后端只发 binHz，按线性重建
+    let binFreqs = null;
+    let specKind = 'fft';
+    function refreshSpectrum() {
+        // 原版：analyser.getByteFrequencyData(freqData); binHz = (sampleRate/2)/binCount
+        // Python 版：数据在 es.onmessage 里已填好，此处只判存在
+        return !!freqData && !!binFreqs;
+    }
+
+    // ---------- 音级 bin 表：每个频段 → 12 个音级 → 该音级占用的频谱 bin 索引 ----------
+    // 频谱模式/bin 数/交叉带宽变化时重建，其余帧只做查表求和
+    // CQT（对数等距）：每个 bin 归到"最近的音"（round/中点），音符落在 bin 中心 →
+    //   一个音拿到 {note-1/3, note, note+1/3} 三颗、关于音符对称，与后端 OnsetGate 同口径
+    // FFT（线性 bin）：行按频率窗、音级按最近半音（每半音 bin 数随频率变化是物理事实）
+    let pitchClassBins = null;
+    let lastSpecKey = "";
+    let pcBins = null;   // 音级 → bin 索引列表（跨音区去重，随 specKey 重建）
+    const pcGlow = new Float32Array(SEMI_N);   // 列头辉光显示强度（EMA 平滑）
+    function ensurePitchClassBins() {
+        if (!freqData || !binFreqs) return;
+        const specKey = specKind + ':' + binFreqs.length + ':' + A4;   // A4 变化时重建映射
+        if (pitchClassBins && lastSpecKey === specKey) return;
+        lastSpecKey = specKey;
+        // CQT 下每半音的 bin 数（对数等距）：相邻 bin 频率比 r → bpo = 1/log2(r)，nps = bpo/12
+        let nps = 0;
+        if (specKind === 'cqt' && binFreqs.length > 1) {
+            const ratio = binFreqs[1] / binFreqs[0];
+            nps = Math.max(1, Math.round(1 / (12 * Math.log2(ratio))));
+        }
+        pitchClassBins = bands.map((_, bIdx) => {
+            const z = ZONE_DEFS[bIdx];
+            const perPc = Array.from({ length: SEMI_N }, () => []);
+            if (nps > 0) {
+                // CQT：每个 bin 归到"最近的音"（round/中点）——音符正落在 bin 中心，
+                // 于是每个音拿到 {note-1/3, note, note+1/3} 三颗、关于音符对称；
+                // pc 与行都由这个音符导出，不用频率窗，口径与后端 OnsetGate 完全一致。
+                for (let i = 0; i < freqData.length; i++) {
+                    const fm = 69 + 12 * Math.log2(binFreqs[i] / A4);
+                    const note = Math.round(fm);
+                    if (note < z.loMidi || note > z.hiMidi) continue; // 不属于本行（本音区）
+                    perPc[((note % 12) + 12) % 12].push(i);
+                }
+            } else {
+                // FFT 线性 bin：行仍按频率窗 [lo, hi]，音级按最近半音
+                const [lo, hi] = bandRange(bIdx);
+                for (let i = 0; i < freqData.length; i++) {
+                    const f = binFreqs[i];
+                    if (f < Math.max(lo, 20) || f > hi) continue; // 20Hz 以下不要
+                    perPc[pitchClassOfFreq(f)].push(i);
+                }
+            }
+            return perPc;
+        });
+        // 派生：每个音级（跨所有音区）的 bin 索引列表（去重），供列头辉光做 bin 累加
+        pcBins = Array.from({ length: SEMI_N }, () => new Set());
+        for (let z = 0; z < ZONE_N; z++)
+            for (let pc = 0; pc < SEMI_N; pc++)
+                for (const bi of pitchClassBins[z][pc]) pcBins[pc].add(bi);
+        pcBins = pcBins.map(s => [...s]);
+    }
+    function getPitchClassAmplitude(bIdx, pc) {
+        if (!freqData || !pitchClassBins) return 0.1;
+        const bins = pitchClassBins[bIdx][pc];
+        if (!bins.length) return 0; // 该音区内没有此音级（如低频段的 C4）
+        let sum = 0;
+        for (let k = 0; k < bins.length; k++) sum += freqData[bins[k]];
+        return sum / bins.length / 255; // 同音级多个 bin 平均（字节已是 A 计权后的 dB）
+    }
+
+    // ---------- 推进一个环形缓冲 ----------
+    function advanceBuffer(buf, amp, pointInterval, deltaTime) {
+        buf.accumTime += deltaTime;
+        while (buf.accumTime >= pointInterval) {
+            buf.accumTime -= pointInterval;
+            // 直接存原始幅值（真实能量值，不做基线扣除）
+            buf.data[buf.writeIdx] = Math.max(0, amp);
+            buf.writeIdx = (buf.writeIdx + 1) % buf.data.length;
+            if (buf.writeIdx === 0) buf.filled = true; // 写满一整轮（HISTORY_CYCLES 圈）
+        }
+    }
+
+    // ---------- 更新表盘数据 (根据时间推进) ----------
+    function updateBuffers(deltaTime) {
+        refreshSpectrum();
+        if (!freqData || !binFreqs) return; // 首帧 SSE 到达前不采样
+        ensurePitchClassBins();
+        const pointInterval = dials[0].period / POINTS;
+        bands.forEach((_, bIdx) => {
+            // 十二音迷你缓冲：每个小盘只取落在自己音级（0=C … 11=B）上的能量
+            for (let pc = 0; pc < SEMI_N; pc++) {
+                const raw = getPitchClassAmplitude(bIdx, pc);
+                // 乘上后端 onset 门增益：击弦亮起、余韵保持、衰减渐灭；
+                // 开关关闭或后端未下发 gate 时全通
+                const g = gateData ? gateData[bIdx * SEMI_N + pc] / 255 : 1;
+                lastRaw[bIdx][pc] = raw;
+                lastGate[bIdx][pc] = g;
+                advanceBuffer(semiBuffers[bIdx][pc], raw * g, pointInterval, deltaTime);
+            }
+        });
+
+        // 5 秒线性图采样：固定 50Hz；钳制累积时间，防切页回来后突发补写一长条平线
+        chartAccum = Math.min(chartAccum + deltaTime, CHART_DT * 4);
+        while (chartAccum >= CHART_DT) {
+            chartAccum -= CHART_DT;
+            for (let b = 0; b < ZONE_N; b++) {
+                for (let pc = 0; pc < SEMI_N; pc++) {
+                    chartRaw[b][pc][chartWrite] = lastRaw[b][pc];
+                    chartGate[b][pc][chartWrite] = lastGate[b][pc];
+                }
+            }
+            // 激活量在写入瞬间判定并冻结：v 越过主阈值点亮 → 刷新该键余晖到期点（绝对采样序）；
+            // 点亮中或余晖内（v>post）的键计入总量。此后该样本的激活值不再改变。
+            let act = 0;
+            const litBase = chartWrite * keyCells.length;
+            for (let k = 0; k < keyCells.length; k++) {
+                const cb = keyCells[k][0], cp = keyCells[k][1];
+                const r = chartRaw[cb][cp][chartWrite], g = chartGate[cb][cp][chartWrite];
+                const v = actToV(r * g);
+                let lit = v > AMP_ROW.color_threshold;
+                if (!lit && ACT_POST_N > 0 && chartAbsN < keyLitUntil[k] && v > ACT_POST) lit = true;
+                if (v > AMP_ROW.color_threshold) keyLitUntil[k] = chartAbsN + ACT_POST_N;
+                chartLit[litBase + k] = lit ? 1 : 0;
+                if (lit) act += r * g;
+            }
+            chartAct[chartWrite] = act;
+            // 谱平坦度（写入时冻结）：SFM = exp(mean(ln m)) / mean(m)，0=纯音 1=白噪。
+            // m 由字节频谱换算：b → dB = b·70/255（幅度谱，20·log10，偏移被比值抵消、跨度须与后端一致）
+            // → 线性幅度 10^(dB/20)。仅统计 88 键频段内的 bin，带外噪声不参与。
+            if (freqData && binFreqs) {
+                pcSl.fill(0); pcSa.fill(0); pcNb.fill(0);
+                let sl = 0, sa = 0, nb = 0;
+                for (let i = 0; i < binFreqs.length; i++) {
+                    const f = binFreqs[i];
+                    if (f < KEY_LOHZ || f > KEY_HIHZ) continue;
+                    const ln = freqData[i] * (SFM_SPAN / 255) * (Math.LN10 / 20);
+                    sl += ln;
+                    sa += Math.exp(ln);
+                    nb++;
+                    // bin → 最近音 → 音级（与 bin 圆点/门控同口径），供逐音级 SFM 累计
+                    const note = Math.round(69 + 12 * Math.log2(f / A4));
+                    if (note >= KEY_LO && note <= KEY_HI) {
+                        const pc = ((note % 12) + 12) % 12;
+                        pcSl[pc] += ln;
+                        pcSa[pc] += Math.exp(ln);
+                        pcNb[pc]++;
+                    }
+                }
+                // 写入原始统计量（Σln/Σm/n），SFM 由显示端按可调窗口合成
+                const o0 = chartWrite * SFM_CH;
+                sfmSl[o0] = sl; sfmSa[o0] = sa; sfmN[o0] = nb;
+                for (let pc = 0; pc < 12; pc++) {
+                    const o = o0 + 1 + pc;
+                    sfmSl[o] = pcSl[pc]; sfmSa[o] = pcSa[pc]; sfmN[o] = pcNb[pc];
+                }
+            } else {
+                const o0 = chartWrite * SFM_CH;
+                for (let ch = 0; ch < SFM_CH; ch++) { sfmSl[o0 + ch] = 0; sfmSa[o0 + ch] = 0; sfmN[o0 + ch] = 0; }
+            }
+            chartWrite = (chartWrite + 1) % CHART_N;
+            chartAbsN++;
+            chartCount = Math.min(chartCount + 1, CHART_N);
+        }
+    }
+
+    // ---------- 绘制单个极坐标折线图（渲染逻辑不变） ----------
+    // 尺寸自适应：迷你表盘时线宽/发光/最新点按比例缩小，表现方式与原大圆一致
+    function drawPolarLine(ctx, cx, cy, radius, buffer, dial, row, color = dial.color, note = -1) {
+        const { data, writeIdx, filled } = buffer;
+        const k = radius / 58; // 相对原始大表盘（58px）的缩放系数
+        const lwGray = Math.max(0.4, 1.5 * k);   // 类别 1（阈值下灰）/ 2（历史灰）：比彩色线明显更细
+        const lwActive = Math.max(0.8, 2.5 * k);
+        const glowBlur = Math.max(4, 18 * k);
+        const dotR = Math.max(1.2, 5 * k);
+
+        // 背景参考圆 + 刻度
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius, 0, 2*Math.PI);
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * 2 * Math.PI - Math.PI/2;
+            const r1 = radius * 0.94;
+            const r2 = radius * 0.98;
+            ctx.beginPath();
+            ctx.moveTo(cx + r1 * Math.cos(angle), cy + r1 * Math.sin(angle));
+            ctx.lineTo(cx + r2 * Math.cos(angle), cy + r2 * Math.sin(angle));
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+        }
+
+        // 如果还没有写入任何点，暂不绘制
+        // （渲染逻辑见下方：从第一个采样点开始即绘制）
+
+        // ---- 绘制折线 (固定角度，按索引顺序) ----
+        // 从采样开始即渲染：未写满一圈时只画已写入的点
+        // 角度从 -PI/2 开始（12点钟），顺时针
+        // 计算每个点的透明度：越靠近写入位置（最新）越亮
+        if (!filled && writeIdx === 0) return; // 一个点都还没写入
+        const N = data.length; // 缓冲总点数 = POINTS × HISTORY_CYCLES
+        const count = filled ? N : writeIdx; // 已写入的点数
+
+        // 实色描边（无渐变拖影）
+        // 分段归一化：只放大显示 [lo, hi] 这一段原始幅度，
+        // v = (raw - lo) / (hi - lo)，区间外贴边（raw<=lo → v=0 贴参考圆，raw>=hi → v=1 到 10% 内圈）
+        const { lo, hi, top, color_threshold: cThr } = row;
+        const span = hi - lo;
+        const toV = (raw) => Math.max(0, Math.min(1, (raw - lo) / span));
+        const rOf = (v) => radius * (1.0 - v * 0.9); // v=0 贴参考圆，v=1 到 10% 内圈
+        // 归属判定：区间 (lo, hi]（向上敞开时 raw>hi 也归它）
+        const owns = (raw) => raw > lo && (top || raw <= hi);
+        const pointXY = (i) => {
+            const r = rOf(toV(data[i]));
+            const angle = (i / POINTS) * 2 * Math.PI - Math.PI/2;
+            return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+        };
+
+        // 最新采样点：激活判定（是否越过主阈值）与扫描线/白点共用
+        const latestIdx = (writeIdx - 1 + N) % N;
+        const latestAmp = data[latestIdx];
+        const vLatest = toV(latestAmp);
+
+        // 彩色阈值圆：配置了 color_threshold 时才有——显示高度 v<=thrV 用 THRESH_COLOR（同色）、
+        // v>thrV 用音级配色
+        const thrV = cThr || 0;
+        // 余晖绑定：最新采样越过主阈值即激活；可重入，每次重入把到期时刻刷新为 now + sec
+        const postSec = row.color_threshold_post_sec || 0;
+        const postThr = Math.min(
+            row.color_threshold_post != null ? row.color_threshold_post : thrV,
+            thrV);                                   // 防误配成比主阈值更高
+        let postBound = false;
+        if (postSec > 0 && note >= 0) {
+            // 仅在流运行时激活/刷新：停止时最新采样是冻结值，否则余晖会被永久续期
+            if (isRunning && owns(latestAmp) && vLatest > thrV) notePostUntil[note] = nowSec() + postSec;
+            postBound = nowSec() < notePostUntil[note]; // 到期自动解绑
+        }
+        const effThr = postBound ? postThr : thrV;   // 绑定存续期间改用更低的 post 阈值判定
+
+        // 彩色线用径向透明度渐变：小圆边缘（α=0.2）→ 圆心（α=1），越靠中心越不透明；
+        // 颜色用 SEMI_RGB（统一感知亮度），渐变与阈值无关。
+        let colorRun = color;
+        if (note >= 0 && thrV > 0 && thrV < 1) {
+            const pcI = ((note % 12) + 12) % 12;
+            let e = gradCache[note];
+            if (!e || e.cx !== cx || e.cy !== cy || e.r !== radius) {
+                const [R, G, Bc] = SEMI_RGB[pcI];
+                const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+                g.addColorStop(0, `rgba(${R},${G},${Bc},1)`);
+                g.addColorStop(1, `rgba(${R},${G},${Bc},${ALPHA_MIN})`);
+                e = { cx, cy, r: radius, g };
+                gradCache[note] = e;
+            }
+            colorRun = e.g;
+        }
+        if (thrV > 0) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, rOf(thrV), 0, 2*Math.PI);
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = THRESH_COLOR;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // 只画归属的点；相对高度超过彩色阈值用音级配色，未超过则用阈值线色（THRESH_COLOR）
+        // shadowCol 单独传：彩色线的 strokeStyle 可能是 CanvasGradient，不能直接赋给 shadowColor
+        const drawRun = (from, to, strokeStyle, width, blur, shadowCol = strokeStyle) => {
+            ctx.beginPath();
+            for (let k = from; k <= to; k++) {
+                const i = filled ? (writeIdx + k) % N : k;
+                const [x, y] = pointXY(i);
+                if (k === from) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = strokeStyle;
+            ctx.lineWidth = width;
+            if (blur) { ctx.shadowBlur = blur; ctx.shadowColor = shadowCol; }
+            else { ctx.shadowBlur = 0; }
+            ctx.stroke();
+        };
+        // 每点渲染类别（按“年龄圈数”衰减：最新一圈 → 上一圈渐灰 → 第 3 圈起不画）：
+        //   3 = 彩色：最新一圈内、归属且超过彩色阈值
+        //   2 = 历史灰：上一圈（FADE_CYCLE）越过彩色阈值的点渐灰显示（阈值外不画，可开关）
+        //   1 = 阈值下：最新一圈内、归属但未过阈值（与阈值虚线同色）
+        //   0 = 不画：第 DROP_CYCLE 圈起，或不满足归属
+        // 圈边界处 ageCycle 变化 → 类别必变 → 折线自动断开，不会跨圈连线
+        const clsOf = new Array(count);
+        for (let p = 0; p < count; p++) {
+            const raw = data[filled ? (writeIdx + p) % N : p];
+            if (!owns(raw)) { clsOf[p] = 0; continue; }
+            const ageCycle = Math.floor((count - 1 - p) / POINTS); // 0=最新一圈，1=上一圈…
+            if (ageCycle >= DROP_CYCLE) { clsOf[p] = 0; continue; }
+            // 上一圈历史灰：只保留越过彩色阈值的点（阈值外不画），可整体关闭
+            if (ageCycle === FADE_CYCLE) { clsOf[p] = (showHistGray && toV(raw) > thrV) ? 2 : 0; continue; }
+            clsOf[p] = toV(raw) > effThr ? 3 : (showSubThresh ? 1 : 0);   // 阈值下灰线可整体关闭
+        }
+        // 各类别描边样式（索引即类别）
+        const RUN_STYLE = [
+            null,
+            [THRESH_COLOR, lwGray, 0],             // 1 阈值下（与阈值虚线同色）
+            ['rgba(214,222,238,0.22)', lwGray, 0], // 2 历史灰（渐隐）
+            [colorRun, lwActive, glowBlur]         // 3 彩色（径向饱和度渐变）
+        ];
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round'; // 单点段也能显示为圆点
+        let p = 0;
+        while (p < count) {
+            const c = clsOf[p];
+            if (c === 0) { p++; continue; }
+            let p1 = p;
+            while (p1 + 1 < count && clsOf[p1 + 1] === c) p1++;
+            const [st, w, b] = RUN_STYLE[c];
+            drawRun(p, p1, st, w, b, c === 3 ? color : st); // 彩色发光仍用纯色（渐变不能赋给 shadowColor）
+            p = p1 + 1;
+        }
+        ctx.shadowBlur = 0;
+
+        // ---- 绘制当前写入点（最新点，闪烁） ----
+        // 与折线同一套规则：归属且相对高度超过生效阈值时才画扫描线和白点
+        if (owns(latestAmp) && vLatest > effThr) {
+            const latestR = rOf(vLatest);
+            const latestAngle = (latestIdx / POINTS) * 2 * Math.PI - Math.PI/2;
+            const lx = cx + latestR * Math.cos(latestAngle);
+            const ly = cy + latestR * Math.sin(latestAngle);
+
+            // ---- 扫描线（从圆心到最新点） ----
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(lx, ly);
+            ctx.strokeStyle = color; // hsl 颜色不能拼接透明度后缀，用 globalAlpha 实现透明
+            ctx.globalAlpha = 0.33;
+            ctx.lineWidth = Math.max(0.5, 1.2 * k);
+            ctx.shadowBlur = 0;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+
+            // ---- 白点：阈值圆处→透明，区间顶端→不透明；
+            // cThr>=1 时 thrV=1，贴中心的激活点直接给全不透明（同时避免 0/0） ----
+            ctx.beginPath();
+            ctx.arc(lx, ly, dotR, 0, 2*Math.PI);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowBlur = Math.max(6, 35 * k);
+            ctx.shadowColor = color;
+            ctx.globalAlpha = effThr < 1
+                ? Math.max(0, Math.min(1, (vLatest - effThr) / (1 - effThr)))
+                : 1;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+
+        // ---- 标签 ----
+        ctx.shadowBlur = 0;
+    }
+
+    // ---------- 绘制全部：12 列（音级）× 9 行（音区）grid ----------
+    function drawAll() {
+        ctx.clearRect(0, 0, W, H);
+        // 背景深色
+        ctx.fillStyle = '#0a1022';
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // 左上角轴提示
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#7286ad';
+        ctx.textAlign = 'left';
+        ctx.fillText('音区＼音级', 6, 24);
+        ctx.textAlign = 'center';
+
+        // 列头强度：与小盘同口径——只算"有色部分"。以最新冻结采样为准：
+        // 逐列取点亮（color door + threshold + 余晖，写入时判定的 chartLit）的格子，
+        // 贡献 = 其门控后显示高度（AMP_ROW lo~hi 映射），仅在点亮的格子上平均；无点亮 → 0
+        if (chartCount > 0) {
+            const lastIdx = (chartWrite - 1 + CHART_N) % CHART_N;
+            const lastBase = lastIdx * keyCells.length;
+            for (let pc = 0; pc < SEMI_N; pc++) {
+                let s = 0, nb = 0;
+                for (let b = 0; b < ZONE_N; b++) {
+                    const ki = keyIdx[b * SEMI_N + pc];
+                    if (ki < 0 || !chartLit[lastBase + ki]) continue;   // 无 color（未点亮）不计
+                    const v = chartRaw[b][pc][lastIdx] * chartGate[b][pc][lastIdx];
+                    const vh = Math.max(0, Math.min(1, (v - AMP_ROW.lo) / (AMP_ROW.hi - AMP_ROW.lo)));
+                    s += vh;
+                    nb++;
+                }
+                let I = nb ? Math.min(1, s / nb) : 0;   // 点亮格的平均显示高度
+                I = Math.pow(I, 0.7);                   // gamma 提升低强度可读性
+                pcGlow[pc] += (I - pcGlow[pc]) * 0.35;
+            }
+        }
+
+        // 顶部音名列（12 列横排，按音级配色）+ 强度指示：
+        // 音名随强度向白色提亮（不背光、无描边）；列头底边一条强度细条
+        // （dim 轨道 + 随强度增长的填充，微辉光只加在细条上），像微型电平表
+        // 坐标取整：整列宽度非整数，亚像素定位会让文字发虚
+        ctx.font = 'bold 13px sans-serif';
+        for (let pc = 0; pc < SEMI_N; pc++) {
+            const I = pcGlow[pc];
+            const c = SEMI_RGB[pc];
+            const tx = Math.round(MARGIN_L + (pc + 0.5) * CELL_W);
+            // 音名：音级色 → 白 随强度插值
+            const mx = (a, b2) => Math.round(a + (b2 - a) * I);
+            ctx.fillStyle = `rgb(${mx(c[0], 255)},${mx(c[1], 255)},${mx(c[2], 255)})`;
+            ctx.fillText(NOTE_NAMES[pc], tx, 24);
+            // 强度细条：整列宽、贴列头底边（无侧缝），dim 轨道 + 强度填充（微辉光只在细条上）
+            const trackW = CELL_W, barH = 3;
+            const barX = MARGIN_L + pc * CELL_W, barY = MARGIN_T - barH;
+            ctx.fillStyle = 'rgba(255,255,255,0.07)';
+            ctx.fillRect(barX, barY, trackW, barH);
+            ctx.save();
+            ctx.shadowBlur = 6 * I;
+            ctx.shadowColor = `rgba(${c[0]},${c[1]},${c[2]},0.9)`;
+            ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(0.35 + 0.55 * I).toFixed(3)})`;
+            ctx.fillRect(barX, barY, trackW * I, barH);
+            ctx.restore();
+        }
+        // 表头分隔线：紧贴 grid 顶边（表头与内容无间隙）
+        ctx.beginPath();
+        ctx.moveTo(MARGIN_L, MARGIN_T + 0.5);
+        ctx.lineTo(W - PAD_R, MARGIN_T + 0.5);
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 选中范围高亮：列（音级） / 行（音区） / 全部 只画一个外围 border（含表头/行标，无内部分格线）；
+        // 单格高亮由下方格子循环绘制
+        if (selected && selected.type !== 'cell') {
+            const hlBrd = 'rgba(255,210,74,0.65)';   // 范围选择只画 border，无底色（底色仅 cell 逐格）
+            const gridW = SEMI_N * CELL_W, gridH = ZONE_N * CELL_H;
+            if (selected.type === 'col') {
+                // 范围选择只画 border（无底色）；底色仅用于 cell（逐格）
+                const gx = MARGIN_L + selected.pc * CELL_W;
+                ctx.strokeStyle = hlBrd; ctx.lineWidth = 1.5;
+                ctx.strokeRect(gx + 0.5, 4, CELL_W - 1, (MARGIN_T - 4) + gridH);
+            } else if (selected.type === 'row') {
+                const gy = MARGIN_T + selected.b * CELL_H;
+                ctx.strokeStyle = hlBrd; ctx.lineWidth = 1.5;
+                ctx.strokeRect(2, gy + 0.5, (MARGIN_L - 2) + gridW, CELL_H - 1);
+            } else if (selected.type === 'multi') {
+                // 多选：bordered（Shift 范围）时画包围整体的外围 border（无底色）；
+                // Ctrl 切换产生的多选不画 border；格子多选由循环内逐格底色
+                if (selected.bordered && (selected.cols.size || selected.rows.size || selected.rect)) {
+                    ctx.strokeStyle = hlBrd; ctx.lineWidth = 1.5;
+                    if (selected.cols.size) {
+                        const pcs = [...selected.cols].sort((a, b) => a - b);
+                        const gx0 = MARGIN_L + pcs[0] * CELL_W;
+                        const gx1 = MARGIN_L + (pcs[pcs.length - 1] + 1) * CELL_W;
+                        ctx.strokeRect(gx0 + 0.5, 4, gx1 - gx0 - 1, (MARGIN_T - 4) + gridH);
+                    }
+                    if (selected.rows.size) {
+                        const bs = [...selected.rows].sort((a, b) => a - b);
+                        const gy0 = MARGIN_T + bs[0] * CELL_H;
+                        const gy1 = MARGIN_T + (bs[bs.length - 1] + 1) * CELL_H;
+                        ctx.strokeRect(2, gy0 + 0.5, (MARGIN_L - 2) + gridW, gy1 - gy0 - 1);
+                    }
+                    if (selected.rect) {
+                        // 格子矩形框选（Shift）：框住逻辑范围（含无键格）
+                        const x0 = MARGIN_L + selected.rect.p0 * CELL_W;
+                        const x1 = MARGIN_L + (selected.rect.p1 + 1) * CELL_W;
+                        const y0 = MARGIN_T + selected.rect.b0 * CELL_H;
+                        const y1 = MARGIN_T + (selected.rect.b1 + 1) * CELL_H;
+                        ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
+                    }
+                }
+            } else if (selected.type === 'all') {
+                ctx.strokeStyle = hlBrd; ctx.lineWidth = 1.5;
+                ctx.strokeRect(2, 4, (MARGIN_L - 2) + gridW, (MARGIN_T - 4) + gridH);
+            }
+        }
+
+        // 每行一个音区（垂直排列），每格一个十二音迷你盘（横向排列）
+        for (let b = 0; b < ZONE_N; b++) {
+            const [lo, hi] = bandRange(b);
+            const cy = MARGIN_T + (b + 0.5) * CELL_H;
+
+            // 行标签（左侧）：音区名 + Hz 范围（坐标取整，避免行高非整数导致的亚像素模糊）
+            ctx.textAlign = 'right';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.fillStyle = '#a2b6e2';
+            ctx.fillText(`${bands[b].name}区`, MARGIN_L - 10, Math.round(cy - 8));
+            ctx.font = '11px sans-serif';
+            ctx.fillStyle = '#7286ad';
+            ctx.fillText(`${Math.round(lo)}–${Math.round(hi)}Hz`, MARGIN_L - 10, Math.round(cy + 9));
+            ctx.textAlign = 'center';
+
+            for (let pc = 0; pc < SEMI_N; pc++) {
+                const cx = MARGIN_L + (pc + 0.5) * CELL_W;
+                const gx = MARGIN_L + pc * CELL_W;
+                const gy = MARGIN_T + b * CELL_H;
+
+                // 单元格边框（grid 参考线）
+                ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(gx, gy, CELL_W, CELL_H);
+
+                // 迷你盘：居中于单元格（渲染逻辑不变，仅位置参数不同）
+                // 残缺区里没有该琴键的格子不画圈（A0–B0 行的 C/C#/D、C8 行的 C#…B）
+                if (zoneHasKey[b][pc]) {
+                    drawPolarLine(ctx, cx, cy, MINI_R, semiBuffers[b][pc], dials[0], AMP_ROW,
+                        SEMI_COLORS[pc], cellMidi(b, pc));
+                }
+
+                // 格内音名小字：水平居中、置于单元底部（坐标取整 + 提亮，避免 11px 小字发虚）
+                ctx.font = '11px sans-serif';
+                ctx.fillStyle = 'rgba(168,188,230,0.8)';
+                ctx.fillText(NOTE_NAMES[pc], Math.round(cx), Math.round(gy + CELL_H - 6));
+
+                // 选中高亮：极淡底色标记预览范围内的格子；仅单格选择才有描边，
+                // 格子多选（cells 模式）只要底色不要 border（外围 border 属于行列/全选模式）
+                if (isCellSelected(b, pc)) {
+                    ctx.save();
+                    ctx.fillStyle = 'rgba(255,210,74,0.12)';
+                    ctx.fillRect(gx, gy, CELL_W, CELL_H);
+                    if (selected && selected.type === 'cell') {
+                        ctx.strokeStyle = 'rgba(255,210,74,0.65)';
+                        ctx.lineWidth = 1.5;
+                        ctx.shadowBlur = 5;
+                        ctx.shadowColor = 'rgba(255,210,74,0.5)';
+                        ctx.strokeRect(gx, gy, CELL_W, CELL_H);
+                    }
+                    ctx.restore();
+                }
+            }
+        }
+        // 附加层：真实 bin 位置（按序号等距、自动换行），叠加在 grid 之上
+        drawBinScatter(ctx);
+    }
+
+    // ---------- 右侧 5 秒线性图（非极化）：x = 时间，y = 幅度 ----------
+    const chartCanvas = document.getElementById('chartCanvas');
+    const chartCtx = chartCanvas.getContext('2d');
+    const sidebar = document.getElementById('sidebar');
+    const sideTitle = document.getElementById('sideTitle');
+    const chartValEl = document.getElementById('chartVal');
+    const legendOneEl = document.getElementById('chartLegendOne');
+    const legendMultiEl = document.getElementById('chartLegendMulti');
+    let chartLegendMode = '';
+    let chartDPR = 1;
+    function fitChart() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+        const bw = Math.round(CHART_W * dpr), bh = Math.round(CHART_H * dpr);
+        if (chartCanvas.width !== bw || chartCanvas.height !== bh) {
+            chartCanvas.width = bw;
+            chartCanvas.height = bh;
+        }
+        chartDPR = dpr;
+        chartCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    fitChart();
+
+    // ---------- 全盘 88 汇总：总量走势（最近 5 秒） ----------
+    const totCanvas = document.getElementById('totCanvas');
+    const totCtx = totCanvas.getContext('2d');
+    const TOT_W = 376, TOT_H = 144;
+    let totDPR = 1;
+    let totVmax = 60;        // 量坐标最小 60，只增不减（峰值锁定，随选择范围重置）
+    let totLastSel = null;   // 上次绘制时的选择对象（换范围 → 重置 totVmax）
+    const totTitle = document.getElementById('totTitle');
+    let totTitleCache = '';
+    function totTitleText() {
+        if (!selected) return '全盘 88 · 总量走势';
+        if (selected.type === 'cell') {
+            const midi = cellMidi(selected.b, selected.pc);
+            return midi != null ? `${noteName(midi)} · 总量走势` : `${NOTE_NAMES[selected.pc]}(无键) · 总量走势`;
+        }
+        const n = selCells(selected).length;
+        if (selected.type === 'col') return `${NOTE_NAMES[selected.pc]} 列 ${n} 键 · 总量走势`;
+        if (selected.type === 'row') return `${ZONE_DEFS[selected.b].name}区 ${n} 键 · 总量走势`;
+        if (selected.type === 'multi') return `多选 ${n} 键 · 总量走势`;
+        return `全盘 ${n} 键 · 总量走势`;
+    }
+    function fitTot() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+        const bw = Math.round(TOT_W * dpr), bh = Math.round(TOT_H * dpr);
+        if (totCanvas.width !== bw || totCanvas.height !== bh) {
+            totCanvas.width = bw; totCanvas.height = bh;
+        }
+        totDPR = dpr;
+        totCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    fitTot();
+    // 88 个真实琴键的格子清单（残缺区/无键格不计），只汇总这些；keyIdx：格子 → keyCells 下标
+    const keyCells = [];
+    const keyIdx = new Int16Array(ZONE_N * SEMI_N).fill(-1);
+    zoneHasKey.forEach((row, b) => row.forEach((has, pc) => {
+        if (has) { keyIdx[b * SEMI_N + pc] = keyCells.length; keyCells.push([b, pc]); }
+    }));
+
+    function drawTotal() {
+        // 标题随选择范围更新（文本不变时跳过，避免每帧触发布局）
+        const tt = totTitleText();
+        if (tt !== totTitleCache) { totTitleCache = tt; totTitle.textContent = tt; }
+        sfmFillLines();   // 按当前窗口合成平坦度曲线（全局 + 12 音级）
+        totCtx.clearRect(0, 0, TOT_W, TOT_H);
+        totCtx.fillStyle = '#0a1022';
+        totCtx.fillRect(0, 0, TOT_W, TOT_H);
+
+        const padL = 30, padR = 8, padT = 8, padB = 16;
+        const iw = TOT_W - padL - padR, ih = TOT_H - padT - padB;
+        const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
+        const yOf = (f) => padT + ih * (1 - Math.max(0, Math.min(1, f))); // f: 归一化 0..1
+
+        // 按当前选择范围计算（单格/列/行/全盘），与第一个预览图联动的同一组 cells
+        const cells = selCells(selected);
+        // 量坐标下限按范围区分（不同范围的量级不可比，只增不减仅在同范围内生效）：
+        // 全盘 60 / 行列 20 / 单格 2 —— 重置与峰值锁定共用同一个下限
+        const vmFloor = !selected ? 60
+            : selected.type === 'all' ? 60
+            : selected.type === 'cell' ? 2
+            : 20;
+        if (totLastSel !== selected) { totLastSel = selected; totVmax = vmFloor; }
+
+        // 逐采样点汇总：原始总量 / 门控后总量由历史缓冲直接求和（稳定不变）；
+        // 激活量由写入时冻结的逐键点亮标志 chartLit 按所选范围求和 —— 历史值恒定，不随左移重算
+        const rawSum = new Float32Array(chartCount);
+        const gatedSum = new Float32Array(chartCount);
+        const actSum = new Float32Array(chartCount);
+        let vmax = 0;
+        for (let p = 0; p < chartCount; p++) {
+            const idx = (chartWrite + p) % CHART_N;
+            const litBase = idx * keyCells.length;
+            let rs = 0, gs = 0, as = 0;
+            for (let k = 0; k < cells.length; k++) {
+                const b = cells[k][0], pc = cells[k][1];
+                const r = chartRaw[b][pc][idx], g = chartGate[b][pc][idx];
+                rs += r;
+                gs += r * g;
+                const ki = keyIdx[b * SEMI_N + pc];
+                if (ki >= 0 && chartLit[litBase + ki]) as += r * g;
+            }
+            rawSum[p] = rs; gatedSum[p] = gs; actSum[p] = as;
+            if (rs > vmax) vmax = rs;
+            if (gs > vmax) vmax = gs;
+        }
+        // 量坐标只增不减：实际峰值 ×1.1 取整后与历史峰值取大（下限随范围）
+        const target = Math.ceil(Math.max(vmFloor, vmax * 1.1));
+        totVmax = Math.max(totVmax, target);
+        const vm = totVmax;
+
+        // 横向网格 + 纵向刻度（量程小于 8 时标签带 1 位小数，避免取整后重复）
+        totCtx.font = '9px sans-serif';
+        totCtx.textAlign = 'right';
+        const steps = 4;
+        const dec = vm < 8 ? 1 : 0;
+        for (let s = 0; s <= steps; s++) {
+            const v = vm * s / steps;
+            const y = Math.round(yOf(v / vm)) + 0.5;
+            totCtx.beginPath();
+            totCtx.moveTo(padL, y); totCtx.lineTo(TOT_W - padR, y);
+            totCtx.strokeStyle = 'rgba(255,255,255,0.07)';
+            totCtx.lineWidth = 1; totCtx.stroke();
+            totCtx.fillStyle = 'rgba(114,134,173,0.9)';
+            totCtx.fillText(v.toFixed(dec), padL - 4, y + 3);
+        }
+        totCtx.textAlign = 'center';
+        for (let s = 0; s <= CHART_SEC; s++) {
+            const p = chartCount - 1 - s * CHART_HZ;
+            if (p < 0) continue;
+            const x = Math.round(xOf(p)) + 0.5;
+            totCtx.beginPath();
+            totCtx.moveTo(x, padT); totCtx.lineTo(x, TOT_H - padB);
+            totCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+            totCtx.stroke();
+            totCtx.fillStyle = 'rgba(114,134,173,0.9)';
+            totCtx.fillText(s === 0 ? '现在' : `-${s}s`, x, TOT_H - 5);
+        }
+
+        if (chartCount > 1) {
+            // 原始总量（灰）
+            totCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) totCtx.lineTo(xOf(p), yOf(rawSum[p] / vm));
+            totCtx.strokeStyle = 'rgba(214,222,238,0.35)';
+            totCtx.lineWidth = 1; totCtx.stroke();
+            // 门控后总量（彩色，面积 + 描边）
+            totCtx.beginPath();
+            totCtx.moveTo(xOf(0), yOf(gatedSum[0] / vm));
+            for (let p = 1; p < chartCount; p++) totCtx.lineTo(xOf(p), yOf(gatedSum[p] / vm));
+            totCtx.lineTo(xOf(chartCount - 1), yOf(0)); totCtx.lineTo(xOf(0), yOf(0));
+            totCtx.closePath();
+            totCtx.fillStyle = '#4ae0ff'; totCtx.globalAlpha = 0.10; totCtx.fill(); totCtx.globalAlpha = 1;
+            totCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) totCtx.lineTo(xOf(p), yOf(gatedSum[p] / vm));
+            totCtx.strokeStyle = '#4ae0ff'; totCtx.lineWidth = 1.5;
+            totCtx.shadowBlur = 6; totCtx.shadowColor = '#4ae0ff'; totCtx.stroke(); totCtx.shadowBlur = 0;
+            // 激活量（橙）：颜色被点亮键的门控后合计
+            totCtx.beginPath();
+            totCtx.moveTo(xOf(0), yOf(actSum[0] / vm));
+            for (let p = 1; p < chartCount; p++) totCtx.lineTo(xOf(p), yOf(actSum[p] / vm));
+            totCtx.strokeStyle = '#ffaa33'; totCtx.lineWidth = 1.0;
+            totCtx.shadowBlur = 4; totCtx.shadowColor = '#ffaa33'; totCtx.stroke(); totCtx.shadowBlur = 0;
+        }
+
+        const totVal = document.getElementById('totVal');
+        if (totVal) {
+            const cur = gatedSum[chartCount - 1] || 0;
+            const actCur = actSum[chartCount - 1] || 0;
+            const rawCur = rawSum[chartCount - 1] || 0;
+            const sfmCur = sfmLines[chartCount - 1] || 0;
+            totVal.textContent =
+                `门控后 ${cur.toFixed(2)} · 点亮 ${actCur.toFixed(2)} · 原始 ${rawCur.toFixed(2)} · 平坦度 ${sfmCur.toFixed(2)}`;
+        }
+    }
+
+    // ---------- 十二音级谱平坦度：每音级一柱（0 纯音 ~ 1 白噪），数据写入时冻结 ----------
+    const sfmPcCanvas = document.getElementById('sfmPcCanvas');
+    const sfmPcCtx = sfmPcCanvas.getContext('2d');
+    const SPF_W = 376, SPF_H = 90;
+    function fitSpf() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+        const bw = Math.round(SPF_W * dpr), bh = Math.round(SPF_H * dpr);
+        if (sfmPcCanvas.width !== bw || sfmPcCanvas.height !== bh) {
+            sfmPcCanvas.width = bw; sfmPcCanvas.height = bh;
+        }
+        sfmPcCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    fitSpf();
+    const sfmPcDisp = new Float32Array(12);   // 显示端轻平滑（数据本身已冻结，这里只顺眼）
+    function drawSfmPc() {
+        sfmPcCtx.clearRect(0, 0, SPF_W, SPF_H);
+        sfmPcCtx.fillStyle = '#0a1022';
+        sfmPcCtx.fillRect(0, 0, SPF_W, SPF_H);
+        const padT = 6, padB = 13, padL = 4, padR = 4;
+        const ih = SPF_H - padT - padB, colW = SPF_W / 12;
+        // 网格：0.25 步进
+        sfmPcCtx.font = '9px sans-serif';
+        sfmPcCtx.textAlign = 'left';
+        for (let v = 0; v <= 1.001; v += 0.25) {
+            const y = Math.round(padT + ih * (1 - v)) + 0.5;
+            sfmPcCtx.beginPath();
+            sfmPcCtx.moveTo(padL, y); sfmPcCtx.lineTo(SPF_W - padR, y);
+            sfmPcCtx.strokeStyle = 'rgba(255,255,255,0.07)';
+            sfmPcCtx.lineWidth = 1; sfmPcCtx.stroke();
+        }
+        // 最新采样值（窗口合成）→ 显示平滑 → 柱状
+        let maxV = 0;
+        for (let pc = 0; pc < 12; pc++) {
+            const v = sfmLines[(1 + pc) * CHART_N + chartCount - 1] || 0;
+            sfmPcDisp[pc] += (v - sfmPcDisp[pc]) * 0.3;
+            const dv = Math.max(0, Math.min(1, sfmPcDisp[pc]));
+            if (dv > maxV) maxV = dv;
+            const bw = colW * 0.62;
+            const x = pc * colW + (colW - bw) / 2;
+            const h = dv * ih;
+            const c = SEMI_RGB[pc];
+            sfmPcCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.85)`;
+            sfmPcCtx.fillRect(x, padT + ih - h, bw, h);
+            // 音名
+            sfmPcCtx.fillStyle = 'rgba(168,188,230,0.8)';
+            sfmPcCtx.textAlign = 'center';
+            sfmPcCtx.fillText(NOTE_NAMES[pc], pc * colW + colW / 2, SPF_H - 3);
+        }
+        const maxEl = document.getElementById('sfmPcMax');
+        if (maxEl) maxEl.textContent = `acc=AVG window=1s 峰值${maxV.toFixed(2)}`;
+        const tileVal = document.getElementById('sfmPcVal');
+        if (tileVal) tileVal.textContent = maxV.toFixed(2);
+    }
+
+    // ---------- 十二音级平坦度曲线：每音级一条 5s 走势线（数据 = sfmLines 滑窗合成） ----------
+    const sfmCurveCanvas = document.getElementById('sfmCurveCanvas');
+    const sfmCurveCtx = sfmCurveCanvas.getContext('2d');
+    const SVC_W = 376, SVC_H = 120;
+    function fitSfmCurve() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+        const bw = Math.round(SVC_W * dpr), bh = Math.round(SVC_H * dpr);
+        if (sfmCurveCanvas.width !== bw || sfmCurveCanvas.height !== bh) {
+            sfmCurveCanvas.width = bw; sfmCurveCanvas.height = bh;
+        }
+        sfmCurveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    fitSfmCurve();
+    function drawSfmCurve() {
+        sfmCurveCtx.clearRect(0, 0, SVC_W, SVC_H);
+        sfmCurveCtx.fillStyle = '#0a1022';
+        sfmCurveCtx.fillRect(0, 0, SVC_W, SVC_H);
+        const padL = 4, padR = 4, padT = 6, padB = 13;
+        const iw = SVC_W - padL - padR, ih = SVC_H - padT - padB;
+        // 网格：0.25 步进 + 1.0 基准线
+        sfmCurveCtx.font = '9px sans-serif';
+        sfmCurveCtx.textAlign = 'left';
+        for (let v = 0; v <= 1.001; v += 0.25) {
+            const y = Math.round(padT + ih * (1 - v)) + 0.5;
+            sfmCurveCtx.beginPath();
+            sfmCurveCtx.moveTo(padL, y); sfmCurveCtx.lineTo(SVC_W - padR, y);
+            sfmCurveCtx.strokeStyle = v === 1 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.07)';
+            sfmCurveCtx.lineWidth = 1; sfmCurveCtx.stroke();
+        }
+        // 十二条曲线（音级色），x 与总量图同一时间轴
+        const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
+        const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
+        for (let pc = 0; pc < 12; pc++) {
+            const base = (1 + pc) * CHART_N;
+            const c = SEMI_RGB[pc];
+            sfmCurveCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) sfmCurveCtx.lineTo(xOf(p), yOf(sfmLines[base + p]));
+            sfmCurveCtx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},0.85)`;
+            sfmCurveCtx.lineWidth = 1;
+            sfmCurveCtx.stroke();
+            // 线尾音名小字，便于对应颜色
+            const lastP = chartCount - 1;
+            sfmCurveCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.95)`;
+            sfmCurveCtx.fillText(NOTE_NAMES[pc], Math.min(xOf(lastP) + 2, SVC_W - 14), yOf(sfmLines[base + lastP]) + 3);
+        }
+    }
+
+    // 格子 → 唯一琴键（残缺区/无键格返回 null）
+    function cellMidi(b, pc) {
+        const z = ZONE_DEFS[b];
+        for (let m = Math.max(z.loMidi, KEY_LO); m <= Math.min(z.hiMidi, KEY_HI); m++) {
+            if (((m % 12) + 12) % 12 === pc) return m;
+        }
+        return null;
+    }
+    function noteName(m) { return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+
+    function selectCell(b, pc) {
+        selected = { type: 'cell', b, pc };
+        const midi = cellMidi(b, pc);
+        sideTitle.textContent = midi != null
+            ? `${ZONE_DEFS[b].name}区 · ${noteName(midi)}（${keyHz(midi).toFixed(1)}Hz）`
+            : `${ZONE_DEFS[b].name}区 · ${NOTE_NAMES[pc]}（无琴键）`;
+    }
+    // ---------- 选择范围：单格 / 列（音级） / 行（音区） / 全盘，多格时数据取最大值 + 中位值 ----------
+    // 选中集合 = 该范围内有真实琴键的格子（残缺区空格不计）
+    function selCells(sel) {
+        if (!sel) return keyCells;   // 未选择 = 全盘 88 键
+        if (sel.type === 'cell') return [[sel.b, sel.pc]];
+        if (sel.type === 'multi') {
+            // 多选混合：cols + rows（互斥）+ cells（可叠加），并集去重。
+            // 选择不限制在 88 键内——无键格照常进入选择集，由下游按数据（恒 0）自然处理
+            const seen = new Set(), out = [];
+            const add = (b, pc) => {
+                const k = b * SEMI_N + pc;
+                if (!seen.has(k)) { seen.add(k); out.push([b, pc]); }
+            };
+            if (sel.cols) sel.cols.forEach(pc => { for (let b = 0; b < ZONE_N; b++) add(b, pc); });
+            if (sel.rows) sel.rows.forEach(b => { for (let pc = 0; pc < SEMI_N; pc++) add(b, pc); });
+            if (sel.cells) sel.cells.forEach(k => add(Math.floor(k / SEMI_N), k % SEMI_N));
+            return out;
+        }
+        if (sel.type === 'col') {
+            const out = [];
+            for (let b = 0; b < ZONE_N; b++) if (zoneHasKey[b][sel.pc]) out.push([b, sel.pc]);
+            return out;
+        }
+        if (sel.type === 'row') {
+            const out = [];
+            for (let pc = 0; pc < SEMI_N; pc++) if (zoneHasKey[sel.b][pc]) out.push([sel.b, pc]);
+            return out;
+        }
+        return keyCells; // all：全盘 88 键
+    }
+    function isCellSelected(b, pc) {
+        // 范围（列/行/全盘/多选）内的格子都标记为 selected → 逐格底色；范围本身只画 border
+        if (!selected) return false;
+        if (selected.type === 'cell') return selected.b === b && selected.pc === pc;
+        if (selected.type === 'col') return selected.pc === pc;
+        if (selected.type === 'row') return selected.b === b;
+        if (selected.type === 'multi') {
+            if (selected.cols && selected.cols.has(pc)) return true;
+            if (selected.rows && selected.rows.has(b)) return true;
+            if (selected.cells && selected.cells.has(b * SEMI_N + pc)) return true;
+            return false;
+        }
+        return true; // all：全盘
+    }
+    function selectCol(pc) {
+        selected = { type: 'col', pc };
+        let n = 0;
+        for (let b = 0; b < ZONE_N; b++) if (zoneHasKey[b][pc]) n++;
+        sideTitle.textContent = `${NOTE_NAMES[pc]} 列 · 全部音区（${n} 键）`;
+    }
+    function selectRow(b) {
+        selected = { type: 'row', b };
+        let n = 0;
+        for (let pc = 0; pc < SEMI_N; pc++) if (zoneHasKey[b][pc]) n++;
+        sideTitle.textContent = `${ZONE_DEFS[b].name}区 · 全部音级（${n} 键）`;
+    }
+    function selectAllCells() {
+        selected = { type: 'all' };
+        sideTitle.textContent = `全盘 · 88 键`;
+    }
+    // ---------- Ctrl/Shift 多选（Excel 模型，三态互斥：cols / rows / cells） ----------
+    // Ctrl+点击 = 加选/减选；Shift+点击 = 从锚点到点击项的连续范围（锚点不动）；
+    // 切换维度（列↔行↔格子）即清空其他维度；全部移空后回到默认中央 C
+    let colAnchor = null, rowAnchor = null, cellAnchorB = null, cellAnchorPc = null;
+    function toggleCol(pc) {
+        let cols;
+        if (selected && selected.type === 'multi' && selected.cols) cols = new Set(selected.cols);
+        else if (selected && selected.type === 'col') cols = new Set([selected.pc]);
+        else cols = new Set();
+        if (cols.has(pc)) cols.delete(pc); else cols.add(pc);
+        // 行列互斥：切换列维度清空行；cells 混选保留
+        const cells = (selected && selected.type === 'multi' && selected.cells) ? new Set(selected.cells) : new Set();
+        finishMulti({ type: 'multi', cols, rows: new Set(), cells }, false);   // Ctrl 切换：不画 border
+    }
+    function toggleRow(b) {
+        let rows;
+        if (selected && selected.type === 'multi' && selected.rows) rows = new Set(selected.rows);
+        else if (selected && selected.type === 'row') rows = new Set([selected.b]);
+        else rows = new Set();
+        if (rows.has(b)) rows.delete(b); else rows.add(b);
+        const cells = (selected && selected.type === 'multi' && selected.cells) ? new Set(selected.cells) : new Set();
+        finishMulti({ type: 'multi', cols: new Set(), rows, cells }, false);   // Ctrl 切换：不画 border
+    }
+    function toggleCell(b, pc) {
+        let cells;
+        if (selected && selected.type === 'multi' && selected.cells) cells = new Set(selected.cells);
+        else if (selected && selected.type === 'cell') cells = new Set([selected.b * SEMI_N + selected.pc]);
+        else cells = new Set();
+        const k = b * SEMI_N + pc;
+        if (cells.has(k)) cells.delete(k); else cells.add(k);
+        // 已选的列/行保留（bg 保留），但 border 移除：cell 操作后不应存在任何 border
+        const cols = (selected && selected.type === 'multi' && selected.cols) ? selected.cols : new Set();
+        const rows = (selected && selected.type === 'multi' && selected.rows) ? selected.rows : new Set();
+        finishMulti({ type: 'multi', cols, rows, cells }, false);
+    }
+    function shiftCols(pc) {
+        const a = colAnchor != null ? colAnchor : pc;
+        const cols = new Set();
+        for (let p = Math.min(a, pc); p <= Math.max(a, pc); p++) cols.add(p);
+        const cells = (selected && selected.type === 'multi' && selected.cells) ? new Set(selected.cells) : new Set();
+        finishMulti({ type: 'multi', cols, rows: new Set(), cells }, true);   // Shift 范围：画整体 outer border，锚点不动
+    }
+    function shiftRows(b) {
+        const a = rowAnchor != null ? rowAnchor : b;
+        const rows = new Set();
+        for (let r = Math.min(a, b); r <= Math.max(a, b); r++) rows.add(r);
+        const cells = (selected && selected.type === 'multi' && selected.cells) ? new Set(selected.cells) : new Set();
+        finishMulti({ type: 'multi', cols: new Set(), rows, cells }, true);   // Shift 范围：画整体 outer border
+    }
+    function shiftCell(b, pc) {
+        // 清除上一个 rect/border（cols/rows 一并清空），但沿用其起点位置：
+        // 上次 rect 的 (b0,p0) > 行列范围的起点列/行 > cellAnchor > 点击格
+        let ab = cellAnchorB, ap = cellAnchorPc;
+        if (selected && selected.type === 'multi') {
+            if (selected.rect) { ab = selected.rect.b0; ap = selected.rect.p0; }
+            else if (selected.cols && selected.cols.size) {
+                const pcs = [...selected.cols].sort((x, y) => x - y);
+                ap = pcs[0];
+                if (ab == null) ab = b;
+            } else if (selected.rows && selected.rows.size) {
+                const bs = [...selected.rows].sort((x, y) => x - y);
+                ab = bs[0];
+                if (ap == null) ap = pc;
+            }
+        }
+        if (ab == null) ab = b;
+        if (ap == null) ap = pc;
+        const b0 = Math.min(ab, b), b1 = Math.max(ab, b);
+        const p0 = Math.min(ap, pc), p1 = Math.max(ap, pc);
+        const cells = new Set();
+        for (let bb = b0; bb <= b1; bb++)
+            for (let pp = p0; pp <= p1; pp++)
+                cells.add(bb * SEMI_N + pp);
+        // cols/rows 清空 → 上一个 border 移除，画面上只剩本次 rect
+        finishMulti({ type: 'multi', cols: new Set(), rows: new Set(), cells, rect: { b0, p0, b1, p1 } }, true);
+    }
+    function finishMulti(sel, bordered) {
+        const n = selCells(sel).length;
+        if (!n) { closePanel(); return; }
+        // bordered：Shift 范围 = true → 画整体 outer border；Ctrl 切换 = false → 不画；
+        // 未显式给出（cell 操作）时沿用原状，避免 Shift 画的 border 意外消失
+        sel.bordered = bordered === undefined ? !!(selected && selected.bordered) : !!bordered;
+        selected = sel;
+        const parts = [];
+        if (sel.cols && sel.cols.size) parts.push('列 ' + [...sel.cols].map(p => NOTE_NAMES[p]).join(' '));
+        if (sel.rows && sel.rows.size) parts.push('区 ' + [...sel.rows].map(b => ZONE_DEFS[b].name).join(' '));
+        if (sel.cells && sel.cells.size) parts.push(`格 ${sel.cells.size}`);
+        sideTitle.textContent = `多选 ${n} 键 · ${parts.join(' + ')}`;
+    }
+    function closePanel() {
+        // 点击网格外 / 多选清空 → 取消选择（图表按全盘计算）
+        selected = null;
+        sideTitle.textContent = '未选择 · 按全盘计算';
+    }
+
+    // 点击主画布（Excel 选择模型，列/行/格子三态互斥）：
+    //   单击 = 替换选择并设锚点；Ctrl+点击 = 加选/减选（锚点移到该项）；
+    //   Shift+点击 = 从锚点到该项的连续范围（列/行/格子矩形框选，锚点不动）
+    canvas.addEventListener('click', (ev) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = (ev.clientX - rect.left) * (W / rect.width);
+        const y = (ev.clientY - rect.top) * (H / rect.height);
+        if (x < MARGIN_L && y < MARGIN_T) {
+            colAnchor = rowAnchor = cellAnchorB = cellAnchorPc = null;
+            selectAllCells(); return;
+        }
+        if (y < MARGIN_T) {
+            const pc = Math.floor((x - MARGIN_L) / CELL_W);
+            if (pc >= 0 && pc < SEMI_N) {
+                // 列头锚点 = 该列最顶上的格子（不限制 88 键），
+                // 之后 Shift 点内容格 = 从首格到点击格的矩形
+                cellAnchorPc = pc;
+                cellAnchorB = 0;
+                rowAnchor = null;
+                if (ev.ctrlKey) { colAnchor = pc; toggleCol(pc); }
+                else if (ev.shiftKey) shiftCols(pc);
+                else { colAnchor = pc; selectCol(pc); }
+                return;
+            }
+        }
+        if (x < MARGIN_L) {
+            const b = Math.floor((y - MARGIN_T) / CELL_H);
+            if (b >= 0 && b < ZONE_N) {
+                // 行标锚点 = 该行最左边的格子（不限制 88 键）
+                cellAnchorB = b;
+                cellAnchorPc = 0;
+                colAnchor = null;
+                if (ev.ctrlKey) { rowAnchor = b; toggleRow(b); }
+                else if (ev.shiftKey) shiftRows(b);
+                else { rowAnchor = b; selectRow(b); }
+                return;
+            }
+        }
+        const pc = Math.floor((x - MARGIN_L) / CELL_W);
+        const b = Math.floor((y - MARGIN_T) / CELL_H);
+        if (pc >= 0 && pc < SEMI_N && b >= 0 && b < ZONE_N) {
+            colAnchor = rowAnchor = null;
+            if (ev.ctrlKey) { cellAnchorB = b; cellAnchorPc = pc; toggleCell(b, pc); }
+            else if (ev.shiftKey) shiftCell(b, pc);
+            else { cellAnchorB = b; cellAnchorPc = pc; selectCell(b, pc); }
+        } else {
+            colAnchor = rowAnchor = cellAnchorB = cellAnchorPc = null;
+            closePanel();
+        }
+    });
+
+    // 滚轮调整窗口周期（grid 与左侧周期瓦片均可）：按滑块步进（step，默认 0.01s），按住 Shift ×10
+    // 向上滚 = 周期增大，向下滚 = 周期减小；同步滑块位置、瓦片数值与边缘闪光
+    function periodWheel(ev) {
+        ev.preventDefault();
+        if (!ev.deltaY) return;
+        const base = parseFloat(periodSlider.step) || 0.01;
+        const mult = ev.shiftKey ? 10 : 1;                 // 按住 Shift 步长 ×10，对齐栅格不变
+        const min = parseFloat(periodSlider.min), max = parseFloat(periodSlider.max);
+        const dir = ev.deltaY < 0 ? 1 : -1;
+        let np = Math.round((dials[0].period + dir * base * mult) / base) * base;
+        np = Math.min(max, Math.max(min, Math.round(np * 100) / 100));
+        if (np !== dials[0].period) {
+            periodSlider.value = np;
+            update(periodSlider);   // 复用滑块逻辑：改周期 + 刷标签/瓦片 + 清空缓冲时间累积
+        }
+    }
+    canvas.addEventListener('wheel', periodWheel, { passive: false });
+    const periodTileEl = document.getElementById('periodTile');
+    periodTileEl.addEventListener('wheel', periodWheel, { passive: false });
+    // 中键：恢复滑块出厂默认值（取 HTML 上的初始 value，不受运行时修改影响）
+    periodTileEl.addEventListener('pointerdown', (ev) => {
+        if (ev.button === 1) {
+            const def = parseFloat(periodSlider.getAttribute('value')) || 0.05;
+            periodSlider.value = def;
+            update(periodSlider);
+            ev.preventDefault();
+        }
+    });
+    periodTileEl.addEventListener('mousedown', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+    selected = null;   // 启动默认不选：两个图表按全盘计算
+
+    function drawChart() {
+        chartCtx.clearRect(0, 0, CHART_W, CHART_H);
+        chartCtx.fillStyle = '#0a1022';
+        chartCtx.fillRect(0, 0, CHART_W, CHART_H);
+        // 未选择（null）= 按全盘计算；单格走单格分支，其余走多格分支
+        const isOne = !!selected && selected.type === 'cell';
+        const cells = selCells(selected);   // null → keyCells（全盘）
+        const color = (selected && selected.type === 'col') ? SEMI_COLORS[selected.pc] : '#4ae0ff';
+
+        const padL = CPAD.L, padR = CPAD.R, padT = CPAD.T, padB = CPAD.B;
+        const iw = CHART_W - padL - padR, ih = CHART_H - padT - padB;
+        // 最新点贴右缘，旧点向左滚出（p = 0 最旧 … chartCount-1 最新）
+        const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
+        const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
+
+        // 横向网格 + 刻度；0.25 = 盘面显示阈值（AMP_ROW.lo），高亮
+        chartCtx.font = '9px sans-serif';
+        chartCtx.textAlign = 'right';
+        for (let v = 0; v <= 1.0001; v += 0.25) {
+            const y = Math.round(yOf(v)) + 0.5;
+            const isThr = Math.abs(v - AMP_ROW.lo) < 1e-6;
+            chartCtx.beginPath();
+            chartCtx.moveTo(padL, y);
+            chartCtx.lineTo(CHART_W - padR, y);
+            chartCtx.strokeStyle = isThr ? 'rgba(255,170,51,0.40)' : 'rgba(255,255,255,0.07)';
+            chartCtx.setLineDash(isThr ? [4, 4] : []);
+            chartCtx.lineWidth = 1;
+            chartCtx.stroke();
+            chartCtx.setLineDash([]);
+            chartCtx.fillStyle = isThr ? 'rgba(255,170,51,0.8)' : 'rgba(114,134,173,0.9)';
+            chartCtx.fillText(v.toFixed(2), padL - 4, y + 3);
+        }
+        // 纵向时间刻度（现在 / -1s … -5s）
+        chartCtx.textAlign = 'center';
+        for (let s = 0; s <= CHART_SEC; s++) {
+            const p = chartCount - 1 - s * CHART_HZ;
+            if (p < 0) continue;
+            const x = Math.round(xOf(p)) + 0.5;
+            chartCtx.beginPath();
+            chartCtx.moveTo(x, padT);
+            chartCtx.lineTo(x, CHART_H - padB);
+            chartCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+            chartCtx.stroke();
+            chartCtx.fillStyle = 'rgba(114,134,173,0.9)';
+            chartCtx.fillText(s === 0 ? '现在' : `-${s}s`, x, CHART_H - 5);
+        }
+
+        // color_threshold 线（紫色虚线）：高于此显示高度的点在盘面显彩色；可在图上抓住上下拖动修改
+        const thrY = padT + ih * (1 - Math.max(0, Math.min(1, AMP_ROW.color_threshold)));
+        chartCtx.beginPath();
+        chartCtx.moveTo(padL, Math.round(thrY) + 0.5);
+        chartCtx.lineTo(CHART_W - padR, Math.round(thrY) + 0.5);
+        chartCtx.strokeStyle = thrDrag ? '#c084ff' : 'rgba(192,132,252,0.8)';
+        chartCtx.setLineDash([2, 3]);
+        chartCtx.lineWidth = 1.5;
+        chartCtx.stroke();
+        chartCtx.setLineDash([]);
+        chartCtx.fillStyle = 'rgba(192,132,252,0.95)';
+        chartCtx.textAlign = 'right';
+        chartCtx.fillText('T=' + AMP_ROW.color_threshold.toFixed(2), CHART_W - padR, thrY - 3);
+
+        if (chartCount > 0 && isOne) {
+            const b = selected.b, pc = selected.pc;
+            const rawArr = chartRaw[b][pc], gateArr = chartGate[b][pc];
+            const idxOf = (p) => (chartWrite + p) % CHART_N; // 写指针=最旧，p=0 最旧 … p=CHART_N-1 最新（窗口恒满）
+            const gatedAt = (p) => rawArr[idxOf(p)] * gateArr[idxOf(p)];
+            // 原始幅度（暗色）
+            chartCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(rawArr[idxOf(p)]));
+            chartCtx.strokeStyle = 'rgba(214,222,238,0.35)';
+            chartCtx.lineWidth = 1;
+            chartCtx.stroke();
+            // 门控后（音级色）：面积填充 + 微光描边
+            chartCtx.beginPath();
+            chartCtx.moveTo(xOf(0), yOf(gatedAt(0)));
+            for (let p = 1; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(gatedAt(p)));
+            chartCtx.lineTo(xOf(chartCount - 1), yOf(0));
+            chartCtx.lineTo(xOf(0), yOf(0));
+            chartCtx.closePath();
+            chartCtx.fillStyle = color;
+            chartCtx.globalAlpha = 0.10;
+            chartCtx.fill();
+            chartCtx.globalAlpha = 1;
+            chartCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(gatedAt(p)));
+            chartCtx.strokeStyle = color;
+            chartCtx.lineWidth = 1.5;
+            chartCtx.shadowBlur = 6;
+            chartCtx.shadowColor = color;
+            chartCtx.stroke();
+            chartCtx.shadowBlur = 0;
+        } else if (chartCount > 0 && cells.length > 0) {
+            // 多格（列/行/全盘）：逐采样汇总门控后显示值 → 最大值 / 中位值 两条线
+            const n = cells.length;
+            const tmp = new Float32Array(n), srt = new Float32Array(n);
+            const maxArr = new Float32Array(chartCount), medArr = new Float32Array(chartCount);
+            for (let p = 0; p < chartCount; p++) {
+                const idx = (chartWrite + p) % CHART_N;
+                for (let k = 0; k < n; k++) {
+                    const cb = cells[k][0], cp = cells[k][1];
+                    tmp[k] = chartRaw[cb][cp][idx] * chartGate[cb][cp][idx];
+                }
+                let mx = 0;
+                for (let k = 0; k < n; k++) if (tmp[k] > mx) mx = tmp[k];
+                maxArr[p] = mx;
+                srt.set(tmp); srt.sort();   // TypedArray.sort 默认数值升序
+                medArr[p] = (n & 1) ? srt[n >> 1] : (srt[(n >> 1) - 1] + srt[n >> 1]) / 2;
+            }
+            chartValEl.textContent = `最大 ${maxArr[chartCount - 1].toFixed(2)} · 中位 ${medArr[chartCount - 1].toFixed(2)}`;
+            // 中位值（暗灰细线）
+            chartCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(medArr[p]));
+            chartCtx.strokeStyle = 'rgba(214,222,238,0.55)';
+            chartCtx.lineWidth = 1;
+            chartCtx.stroke();
+            // 最大值（彩色，面积填充 + 微光描边）
+            chartCtx.beginPath();
+            chartCtx.moveTo(xOf(0), yOf(maxArr[0]));
+            for (let p = 1; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(maxArr[p]));
+            chartCtx.lineTo(xOf(chartCount - 1), yOf(0));
+            chartCtx.lineTo(xOf(0), yOf(0));
+            chartCtx.closePath();
+            chartCtx.fillStyle = color;
+            chartCtx.globalAlpha = 0.10;
+            chartCtx.fill();
+            chartCtx.globalAlpha = 1;
+            chartCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(maxArr[p]));
+            chartCtx.strokeStyle = color;
+            chartCtx.lineWidth = 1.5;
+            chartCtx.shadowBlur = 6;
+            chartCtx.shadowColor = color;
+            chartCtx.stroke();
+            chartCtx.shadowBlur = 0;
+        }   // 数据未到：静默，不画“等待数据”提示
+
+        // 激活量（黄）：与全盘图同逻辑——点亮（含余晖）键才计入，未点亮为 0（写入时冻结）
+        // 单格 = 该键点亮时的显示值；多选 = 点亮键中的最大贡献（与最大值线同尺度）
+        if (chartCount > 0) {
+            const actArr = new Float32Array(chartCount);
+            for (let p = 0; p < chartCount; p++) {
+                const idx = (chartWrite + p) % CHART_N;
+                let m = 0;
+                for (let k = 0; k < cells.length; k++) {
+                    const ki = keyIdx[cells[k][0] * SEMI_N + cells[k][1]];
+                    if (ki < 0 || !chartLit[idx * keyCells.length + ki]) continue;
+                    const v = chartRaw[cells[k][0]][cells[k][1]][idx] * chartGate[cells[k][0]][cells[k][1]][idx];
+                    if (v > m) m = v;
+                }
+                actArr[p] = m;
+            }
+            chartCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) chartCtx.lineTo(xOf(p), yOf(actArr[p]));
+            chartCtx.strokeStyle = '#ffaa33';
+            chartCtx.lineWidth = 1.0;
+            chartCtx.shadowBlur = 4; chartCtx.shadowColor = '#ffaa33';
+            chartCtx.stroke(); chartCtx.shadowBlur = 0;
+        }
+
+        // 图例切换（单格 / 多格两套，仅在模式变化时改 DOM）+ 紧凑读数 + mini bin 柱状图（仅单格）
+        const lm = isOne ? 'one' : 'multi';
+        if (lm !== chartLegendMode) {
+            chartLegendMode = lm;
+            legendOneEl.style.display = isOne ? '' : 'none';
+            legendMultiEl.style.display = isOne ? 'none' : '';
+        }
+        if (isOne) {
+            const raw = lastRaw[selected.b][selected.pc], g = lastGate[selected.b][selected.pc];
+            chartValEl.textContent = `原始 ${raw.toFixed(2)} · 门控 ${g.toFixed(2)} · 显示 ${(raw * g).toFixed(2)}`;
+            drawBinBars(chartCtx, selected.b, selected.pc);
+        } else {
+            chartValEl.textContent = `已选 ${cells.length} 键`;
+        }
+    }
+
+    // ---------- 阈值线交互：hover 变抓手/上下箭头，按住上下拖动改 AMP_ROW.color_threshold ----------
+    // color_threshold 是纯前端显示参数（盘面显色阈值），拖动即时生效；值存 localStorage 刷新保持
+    let thrDrag = false;
+    const THR_HIT_PX = 5;   // 命中容差（px）
+    try {
+        const ct = parseFloat(localStorage.getItem('colorThreshold'));
+        if (isFinite(ct)) AMP_ROW.color_threshold = Math.max(AMP_ROW.lo, Math.min(1, ct));
+    } catch (e) {}
+    function chartEventY(ev) {
+        const rect = chartCanvas.getBoundingClientRect();
+        return (ev.clientY - rect.top) * (CHART_H / rect.height);
+    }
+    function thrLineY() {
+        const ih = CHART_H - CPAD.T - CPAD.B;
+        return CPAD.T + ih * (1 - Math.max(0, Math.min(1, AMP_ROW.color_threshold)));
+    }
+    chartCanvas.addEventListener('pointermove', (ev) => {
+        const y = chartEventY(ev);
+        if (thrDrag) {
+            const ih = CHART_H - CPAD.T - CPAD.B;
+            // 下限 = AMP_ROW.lo（盘面显示范围下限）：阈值不可低于 lo
+            AMP_ROW.color_threshold = Math.max(AMP_ROW.lo, Math.min(1, 1 - (y - CPAD.T) / ih));
+            try { localStorage.setItem('colorThreshold', String(AMP_ROW.color_threshold)); } catch (e) {}
+            drawChart();
+            return;
+        }
+        const near = Math.abs(y - thrLineY()) <= THR_HIT_PX;   // 未选择时图表按全盘绘制，阈值线常驻
+        chartCanvas.style.cursor = near ? 'ns-resize' : 'default';
+    });
+    const THR_DEFAULT = 0.6;   // color_threshold 出厂默认（中键重置目标）
+    function thrReset() {
+        AMP_ROW.color_threshold = THR_DEFAULT;
+        try { localStorage.setItem('colorThreshold', String(THR_DEFAULT)); } catch (e) {}
+        drawChart();
+    }
+    chartCanvas.addEventListener('pointerdown', (ev) => {
+        if (ev.button === 1) {
+            // 中键：悬停在线上时重置为默认值（未选择状态下阈值线常驻，同样可用）
+            if (Math.abs(chartEventY(ev) - thrLineY()) <= THR_HIT_PX) thrReset();
+            ev.preventDefault();
+            return;
+        }
+        if (Math.abs(chartEventY(ev) - thrLineY()) <= THR_HIT_PX) {
+            thrDrag = true;
+            try { chartCanvas.setPointerCapture(ev.pointerId); } catch (e) {}
+            ev.preventDefault();
+        }
+    });
+    // 屏蔽浏览器中键自动滚动
+    chartCanvas.addEventListener('mousedown', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+    const thrDragEnd = (ev) => {
+        if (!thrDrag) return;
+        thrDrag = false;
+        try { chartCanvas.releasePointerCapture(ev.pointerId); } catch (e) {}
+    };
+    chartCanvas.addEventListener('pointerup', thrDragEnd);
+    chartCanvas.addEventListener('pointercancel', thrDragEnd);
+
+    // 右上角超小 mini：当前选中音级拆成的各 bin 原始值（无背景，仅三个框；0 高度画空心框）
+    function drawBinBars(c, b, pc) {
+        if (!pitchClassBins || !freqData || !binFreqs) return;
+        const bins = pitchClassBins[b][pc];
+        if (!bins || !bins.length) return;
+        const n = bins.length;
+        const bw = 66, bh = 34;
+        const bx = CHART_W - bw - 6, by = 6;
+        c.save();
+        // 仅三个框：有值填充、无值空心，无背景
+        const padX = 5, top = by + 1, bottom = by + bh - 1;
+        const areaH = bottom - top, innerW = bw - padX * 2;
+        const gap = 2;
+        const fixedBar = 15; // 单 bin 目标宽：1 个 bin 只占一格列，不拉伸占满
+        const barW = n * fixedBar + (n - 1) * gap > innerW
+            ? (innerW - gap * (n - 1)) / n   // bin 过多时缩小防溢出
+            : fixedBar;
+        const color = SEMI_COLORS[pc];
+        for (let k = 0; k < n; k++) {
+            const idx = bins[k];
+            const v = Math.max(0, Math.min(1, freqData[idx] / 255));
+            const x = bx + padX + k * (barW + gap);
+            const h = v * areaH;
+            if (h < 0.5) {
+                c.strokeStyle = 'rgba(255,255,255,0.28)';
+                c.lineWidth = 1;
+                c.strokeRect(x, bottom - 3, barW, 3);
+            } else {
+                c.fillStyle = color;
+                c.fillRect(x, bottom - h, barW, h);
+            }
+        }
+        c.restore();
+    }
+
+    // 调试视图：把每个 bin 作为“频率中心”，按其真实中心频率 f 定位到 grid 的 2D 坐标上
+    // （x = 音级列 + 半音内偏移，表达“一个八度内的频率高低”；y 只表示所属 zone 行，不重复编码频率）
+    // 归属口径与 amp 归类、后端 OnsetGate 统一：每个 bin 归到"最近的音"（round(fm)），
+    // 该音符同时决定列(pc)、行(zone)与点在格内的偏移 → 每格 3 颗点对称落在 -1/3 / 0 / +1/3
+    function drawBinScatter(c) {
+        if (!showBinDots) return;   // bin 圆点关闭：跳过叠加层
+        if (!freqData || !binFreqs) return;   // 数据未到：静默，不画“等待频谱数据”提示
+        const x0 = MARGIN_L, xSpan = W - MARGIN_L - PAD_R;
+        // 每个 bin：换算 midi → 归到"最近的音"（round，中点），该音符决定所在行与所在列；
+        // x = 该音符列中心 + (fm-note) 格 → 3 颗点对称落在列中心两侧（-1/3 / 0 / +1/3），不会越出格
+        for (let i = 0; i < binFreqs.length; i++) {
+            const fm = 69 + 12 * Math.log2(binFreqs[i] / A4);
+            const note = Math.round(fm);
+            if (note < KEY_LO || note > KEY_HI) continue;   // 88 键之外不画
+            const b = noteRow[note];                        // 该音符所属 zone 行
+            const y = MARGIN_T + (b + 0.5) * CELL_H;   // y 仅决定所属 zone 行（行内不再按频率细分）
+            const pc = ((note % 12) + 12) % 12;
+            const x = x0 + (pc + 0.5 + (fm - note)) / SEMI_N * xSpan; // 列中心 + 半音内偏移
+            const v = (freqData[i] || 0) / 255;     // 当前能量
+            const rad = 1.6 + 3.2 * v;
+            c.beginPath();
+            c.arc(x, y, rad, 0, 2 * Math.PI);
+            // 颜色 = 音级（与列/小盘同色，统一感知亮度），一眼看出该 bin 属于哪个音级；透明度随能量
+            const bc = SEMI_RGB[pc];
+            c.fillStyle = `rgba(${bc[0]},${bc[1]},${bc[2]},${(0.25 + 0.7 * v).toFixed(3)})`;
+            c.fill();
+            c.lineWidth = 0.6;                       // 细暗描边，重叠时也能分辨
+            c.strokeStyle = 'rgba(0,0,0,0.45)';
+            c.stroke();
+        }
+    }
+
+    function resetBuffers() {
+        gateData = null; // 重连/复位时丢弃旧门增益，等新流第一帧
+        semiBuffers.forEach(bufRow => bufRow.forEach(buf => {
+            buf.data.fill(0);
+            buf.writeIdx = 0;
+            buf.accumTime = 0;
+            buf.filled = false;
+        }));
+    }
+
+    // ---------- 主循环 ----------
+    let drawAccum = 0;
+    function loop(timestamp) {
+        if (!isRunning) {
+            // 停止状态，继续绘制静态
+            drawAll();
+            animationId = requestAnimationFrame(loop);
+            return;
+        }
+
+        // 计算时间差 (秒)
+        if (lastTimestamp === 0) lastTimestamp = timestamp;
+        const delta = (timestamp - lastTimestamp) / 1000;
+        lastTimestamp = timestamp;
+
+        // 更新表盘数据（每帧都要累积，保证采样精度）
+        updateBuffers(delta);
+
+        // 绘制节流到 ~62fps：跟随后端 60fps 推送（原 1/50 会把 60fps 数据显成 50fps），
+        // 同时避免 120Hz+ 高刷屏按显示刷新率过绘制（数据并没有更密）
+        drawAccum += delta;
+        if (drawAccum >= 1 / 62) {
+            drawAccum = 0;
+            drawAll();
+            drawChart(); // 右侧栏常驻，每帧刷新线性图（无选中时显示占位）
+            drawTotal(); // 总量走势（按所选范围）
+            drawSfmPc(); // 十二音级谱平坦度
+            drawSfmCurve(); // 十二音级平坦度曲线
+        }
+
+        animationId = requestAnimationFrame(loop);
+    }
+
+    // ---------- 输入源：连接 Python 后端 SSE ----------
+    function connectSSE() {
+        if (es) { es.close(); es = null; }
+        setStatus('⏳ 连接 Python 后端 ...', true);   // 未就绪：整块屏蔽 grid
+        es = new EventSource('/stream');
+        es.onopen = () => {
+            isRunning = true;
+            lastTimestamp = 0;
+            resetBuffers();
+            setStatus('🎧 Python 频谱接收中 ...', false);   // 已就绪：只留内容区，放开 grid
+        };
+        es.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data);
+            if (msg.err) {
+                setStatus('❌ ' + msg.err, true);   // 后端报错：屏蔽 grid
+                isRunning = false;
+                return;
+            }
+            // base64 → Uint8Array（频谱字节）
+            const bin = atob(msg.s);
+            if (!freqData || freqData.length !== bin.length) freqData = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) freqData[i] = bin.charCodeAt(i);
+            // 逐格 onset 门增益：base64 → 9×12 字节（行主序 z*12+pc）
+            // 后端 --no-gate 时不下发该字段 → gateData=null，前端全通
+            if (msg.gate) {
+                const gb = atob(msg.gate);
+                if (gb.length === ZONE_N * SEMI_N) { // 长度不符（异常帧）不更新，保留旧值
+                    if (!gateData || gateData.length !== gb.length) gateData = new Uint8Array(gb.length);
+                    for (let i = 0; i < gb.length; i++) gateData[i] = gb.charCodeAt(i);
+                }
+            } else {
+                gateData = null;
+            }
+            // 每 bin 中心频率：CQT 后端直发对数等距表；FFT 后端只发 binHz，按线性重建
+            specKind = msg.kind || 'fft';
+            if (msg.freqs) {
+                if (!binFreqs || binFreqs.length !== msg.freqs.length) binFreqs = new Float64Array(msg.freqs.length);
+                for (let i = 0; i < msg.freqs.length; i++) binFreqs[i] = msg.freqs[i];
+            } else {
+                if (!binFreqs || binFreqs.length !== bin.length) binFreqs = new Float64Array(bin.length);
+                for (let i = 0; i < bin.length; i++) binFreqs[i] = (i + 0.5) * msg.binHz;
+            }
+            const realFps = (msg.rfps != null) ? ` 实测${msg.rfps}fps` : '';
+            srcInfo.textContent = specKind === 'cqt'
+                ? `fs=${msg.fs}Hz · ${msg.fps}fps${realFps} · CQT ${binFreqs.length}bin @${msg.bpo}/oct ${binFreqs[0].toFixed(1)}–${binFreqs[binFreqs.length - 1].toFixed(0)}Hz`
+                : `fs=${msg.fs}Hz · ${msg.fps}fps${realFps} · binHz=${msg.binHz.toFixed(2)} · FFT=${bin.length * 2}`;
+        };
+        es.onerror = () => {
+            isRunning = false;
+            gateData = null; // 断开即全通，避免残留增益把最后一次状态冻在板上
+            setStatus('❌ 与 Python 后端断开，可点「重连」', true);   // 断开：屏蔽 grid
+        };
+    }
+    document.getElementById('reconnectBtn').addEventListener('click', () => connectSSE());
+
+    // 初始绘制
+    drawAll();
+    // 自动连接 Python 后端（输入源唯一区别：SSE 而非 Web Audio，无需用户授权点击）
+    connectSSE();
+    // 启动动画（即使未连上后端，也绘制静态）
+    isRunning = false;
+    requestAnimationFrame(loop);
+
+    window.addEventListener('beforeunload', () => {
+        if (es) es.close();
+        if (animationId) cancelAnimationFrame(animationId);
+    });
+
+})();
+</script>
+</body>
+</html>
