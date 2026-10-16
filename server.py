@@ -42,6 +42,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -599,27 +600,28 @@ def api_doc_post():
     return jsonify({"ok": True, "path": DOC_PATH, "charts": len(body["charts"])})
 
 
-# ---- 模板目录：templates/*.json 的浏览接口（供 matrix.html 左栏树 + 中间视图用） ----
-# 每个文件就是一条独立的 DSP 链：{ title, desc, stages:[{id,on,p}] }，与 matrix-doc.json 里一格同形。
-# 只读接口：模板不参与存档，要改就由前端「从模板新建」克隆进 matrix-doc.json。
+# ---- 两类 DSP 文件目录：一个文件 = 一条链 { title, desc, from?, stages } ----
+#   templates/        出厂预设，只读接口（要改由前端「从模板新建」克隆成自己的图）
+#   content/My dsps/  我的图，可读写（新建 / 改名 / 改链 / 删除）
+# 两者格式相同、接口同形，前端用同一套列表视图与单文件视图渲染，只差"能不能写回"。
 TPL_DIR = os.path.join(HERE, "templates")
+TPL_PREFIX = "templates/"
+DSP_DIR = os.path.join(HERE, "content", "My dsps")
+DSP_PREFIX = "content/My dsps/"
+# 我的图的文件名 = 图的 id（u1、u2…）：身份稳定，改标题不必改名，也不会撞中文名/空格
+DSP_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# 内置 id 不落"我的图"：它们是出厂内容，只在 matrix-doc.json / templates/ 里
+BUILTIN_IDS = {"input", "lab"} | {f"c{i}" for i in range(1, 9)}
 
 
-def _tpl_path(name):
-    """文件名 → 绝对路径；越界（../、子目录、绝对路径）一律拒绝。"""
+def _dir_item(dirpath, prefix, name):
+    """读一个 .json 文件 → 前端用的条目；越界名 / 坏 JSON 一律当不存在。"""
     if not name or not name.endswith(".json"):
         return None
     if "/" in name or "\\" in name or ".." in name or name.startswith("."):
         return None
-    p = os.path.abspath(os.path.join(TPL_DIR, name))
-    if os.path.dirname(p) != os.path.abspath(TPL_DIR):
-        return None
-    return p
-
-
-def _tpl_item(name):
-    p = _tpl_path(name)
-    if not p:
+    p = os.path.abspath(os.path.join(dirpath, name))
+    if os.path.dirname(p) != os.path.abspath(dirpath):
         return None
     try:
         with open(p, "r", encoding="utf-8") as f:
@@ -629,7 +631,7 @@ def _tpl_item(name):
     if not isinstance(d, dict):
         return None
     return {
-        "file": "templates/" + name,
+        "file": prefix + name,
         "name": name[:-5],
         "title": d.get("title") if isinstance(d.get("title"), str) else name[:-5],
         "desc": d.get("desc") if isinstance(d.get("desc"), str) else "",
@@ -637,24 +639,144 @@ def _tpl_item(name):
     }
 
 
-@app.route("/api/templates")
-def api_templates():
-    """列出 templates/ 下全部 .json。带 title/desc/stages，列表视图与小预览直接可用，不必再逐个取。"""
+def _dir_list(dirpath, prefix):
     try:
-        names = sorted(n for n in os.listdir(TPL_DIR) if n.endswith(".json"))
+        names = sorted(n for n in os.listdir(dirpath) if n.endswith(".json"))
     except FileNotFoundError:
         names = []
-    items = [_tpl_item(n) for n in names]
-    return jsonify({"dir": "templates/", "templates": [i for i in items if i]})
+    return [i for i in (_dir_item(dirpath, prefix, n) for n in names) if i]
+
+
+def _dsp_path(name):
+    """名字带不带 .json 都认（URL 里传的是完整文件名），只认 id 形态的 stem。"""
+    stem = name[:-5] if isinstance(name, str) and name.endswith(".json") else name
+    if not stem or not DSP_NAME_RE.match(stem):
+        return None
+    return os.path.join(DSP_DIR, stem + ".json")
+
+
+def _dsp_write(name, body):
+    """原子写：先写 .tmp 再改名。返回写完读回的条目。"""
+    p = _dsp_path(name)
+    if not p:
+        return None
+    stem = os.path.basename(p)[:-5]
+    os.makedirs(DSP_DIR, exist_ok=True)
+    out = {
+        "title": body.get("title") if isinstance(body.get("title"), str) else name,
+        "desc": body.get("desc") if isinstance(body.get("desc"), str) else "",
+        "stages": body.get("stages") if isinstance(body.get("stages"), list) else [],
+    }
+    # from 不写：从模板创建出来之后就是独立一条，不记来源，也没有"恢复出厂"可回
+    tmp = p + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return None
+    return _dir_item(DSP_DIR, DSP_PREFIX, stem + ".json")
+
+
+def _dsp_migrate_once():
+    """首次访问我的图：把 matrix-doc.json 里的用户图（非内置 id）搬成 content/My dsps/*.json。
+    目录里已经有文件就什么都不做 —— 迁移只发生一次，之后文件才是真相。"""
+    try:
+        if any(n.endswith(".json") for n in os.listdir(DSP_DIR)):
+            return
+    except FileNotFoundError:
+        pass
+    try:
+        with open(DOC_PATH, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return
+    for c in doc.get("charts") or []:
+        if not isinstance(c, dict):
+            continue
+        cid = c.get("id")
+        if not isinstance(cid, str) or cid in BUILTIN_IDS or not DSP_NAME_RE.match(cid):
+            continue
+        _dsp_write(cid, c)
+
+
+@app.route("/api/templates")
+def api_templates():
+    """列出 templates/ 下全部 .json（带 title/desc/stages，列表视图不必再逐个取）。"""
+    return jsonify({"dir": TPL_PREFIX, "items": _dir_list(TPL_DIR, TPL_PREFIX)})
 
 
 @app.route("/api/templates/<path:name>")
 def api_template_one(name):
     """取单个模板文件（列表之外的新文件、或前端直接按路径打开时用）。"""
-    item = _tpl_item(name)
+    item = _dir_item(TPL_DIR, TPL_PREFIX, name)
     if not item:
         return jsonify({"error": "模板不存在或不是合法 JSON"}), 404
-    return jsonify({"template": item})
+    return jsonify({"item": item})
+
+
+@app.route("/api/dsps")
+def api_dsps():
+    """列出 content/My dsps/ 下全部 .json（= 我的图）。首次调用会顺带做一次迁移。"""
+    _dsp_migrate_once()
+    return jsonify({"dir": DSP_PREFIX, "items": _dir_list(DSP_DIR, DSP_PREFIX)})
+
+
+@app.route("/api/dsps/<path:name>")
+def api_dsp_one(name):
+    item = _dir_item(DSP_DIR, DSP_PREFIX, name)
+    if not item:
+        return jsonify({"error": "这一条不存在或不是合法 JSON"}), 404
+    return jsonify({"item": item})
+
+
+@app.route("/api/dsps", methods=["POST"])
+def api_dsp_create():
+    """新建一条我的图：name 即图的 id（u1…），已存在返回 409。"""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "请求体必须是对象"}), 400
+    name = body.get("name")
+    if not isinstance(name, str) or not DSP_NAME_RE.match(name):
+        return jsonify({"error": "name 只能是字母/数字/下划线/短横线（= 图的 id）"}), 400
+    if os.path.exists(os.path.join(DSP_DIR, name + ".json")):
+        return jsonify({"error": f"{name}.json 已存在"}), 409
+    item = _dsp_write(name, body)
+    if not item:
+        return jsonify({"error": "写入失败"}), 500
+    return jsonify({"item": item})
+
+
+@app.route("/api/dsps/<path:name>", methods=["POST"])
+def api_dsp_save(name):
+    """覆盖写回某一条（标题 / 说明 / 级联）。"""
+    if not _dsp_path(name):
+        return jsonify({"error": "文件名不合法"}), 400
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "请求体必须是对象"}), 400
+    item = _dsp_write(name, body)
+    if not item:
+        return jsonify({"error": "写入失败"}), 500
+    return jsonify({"item": item})
+
+
+@app.route("/api/dsps/<path:name>", methods=["DELETE"])
+def api_dsp_delete(name):
+    p = _dsp_path(name)
+    if not p:
+        return jsonify({"error": "文件名不合法"}), 400
+    try:
+        os.remove(p)
+    except FileNotFoundError:
+        return jsonify({"error": "这一条已经不在了"}), 404
+    except OSError as e:
+        return jsonify({"error": f"删除失败：{e}"}), 500
+    return jsonify({"ok": True, "name": name})
 
 
 @app.route("/set_smoothing")

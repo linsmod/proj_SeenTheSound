@@ -94,6 +94,7 @@
     .ltools { flex: none; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
     .lbtn.primary { border-color: rgba(74,224,255,0.45); color: #cbeeff; }
     .lbtn:disabled { opacity: 0.35; cursor: default; }
+    .lbtn.danger:hover { background: #6b2440; }
     .lbtn { background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; font-size: 12px; padding: 3px 12px; cursor: pointer; }
     .lbtn:hover { background: #263a60; color: #fff; }
     /* 级联逐级出图，且每张卡自带全部编排控件（收起也可用）：
@@ -393,15 +394,20 @@
     // 放在根上而不是每格里 —— 只读的原始输入格与模板条目也归它管，而且它跟标题/级联这种"内容"不是一回事。
     // 暂停/快照的 key 有两种：格子 id（input / c1… / uN）与模板文件路径（templates/x.json），
     // 模板条目也能暂停、也存快照，所以两种 key 都要在清洗时留下。
-    // 模板清单是异步拉的，清洗那一刻 TPLS 可能还是空的 → 只能按形态认：templates/ 下、单层、.json 结尾。
-    const TPL_FILE_RE = /^templates\/[^/]+\.json$/;
-    function isTplFileKey(k) { return typeof k === 'string' && TPL_FILE_RE.test(k); }
+    // 两类条目都能暂停/存快照，key 就是各自的路径；清单是异步拉的，清洗那一刻可能还是空的
+    // → 只能按形态认：两个目录之一、单层、.json 结尾。
+    const DIR_TPL = 'templates/', DIR_DSP = 'content/My dsps/';
+    const FILE_KEY_RE = /^(templates|content\/My dsps)\/[^/]+\.json$/;
+    function isFileKey(k) { return typeof k === 'string' && FILE_KEY_RE.test(k); }
+    function dirOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? '' : file.slice(0, i + 1); }
+    function stemOf(file) { const i = file.lastIndexOf('/'); const n = i < 0 ? file : file.slice(i + 1); return n.replace(/\.json$/, ''); }
+    function isDspFile(file) { return dirOf(file) === DIR_DSP; }
     function emptyView() { return { paused: [], shots: {}, openedTabs: [] }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
         const set = new Set(ids);
-        const known = (k) => set.has(k) || isTplFileKey(k);
+        const known = (k) => set.has(k) || isFileKey(k);
         if (Array.isArray(raw.paused)) {
             v.paused = raw.paused.filter(known).slice(0, 64);
         }
@@ -889,105 +895,47 @@
     //   我的图       = DOC 里用户自己的图（左键 → 打开右栏编辑，右键 复制 / 恢复出厂 / 删除）
     // 内置 ①–⑧ / 实验台 / 0 号输入不再单独成组：它们都在矩阵里有卡片，卡片点得到、右键也有同一套菜单。
     const treeEl = document.getElementById('tree');
-    const treeNodes = new Map();         // id → { row, to, tn, tk }，给 syncTree 就地刷（不重建 DOM）
-    function isUserChart(id) { return !isTemplate(id); }
-    // 一条记录的"出厂来源"：模板就是它自己，「我的图」看 from（从哪个模板新建的）
-    function originId(e) { return isTemplate(e.id) ? e.id : (e.from || ''); }
-    function originPristine(e) { return PRISTINE.get(originId(e)) || null; }
-    // 「恢复出厂」只在"有出厂快照可回 + 现在确实不一样"时才有意义（比较只看内容，不看 from）
+    // 树里每一行都是一个磁盘文件（目录行 / 文件行），不再按 DOC 的条目列 —— DOC 里的格子在矩阵里有卡片。
+    // 「恢复出厂」只对内置模板有意义（比较内置出厂快照），我的图从创建起就是独立一条，不记来源。
+    function originPristine(e) { return PRISTINE.get(e.id) || null; }
     function canReset(id) {
         const e = entryOf(id);
         if (!e) return false;
         const p = originPristine(e);
         return !!p && contentJson(e) !== contentJson(p);
     }
-    function treeRow(id) {
-        const row = document.createElement('div');
-        row.className = 'tnode' + (isTemplate(id) ? ' tpl' : '');
-        const to = document.createElement('span'); to.className = 'to';
-        const tn = document.createElement('span'); tn.className = 'tn';
-        const tk = document.createElement('span'); tk.className = 'tk';
-        row.append(to, tn, tk);
-        row.title = isTemplate(id)
-            ? '模板（非用户创建，只读）：左键打开看，右键「从模板新建」一份可编辑的副本'
-            : '我的图：左键打开编辑，右键「复制 / 删除 / 恢复出厂」';
-        row.tabIndex = 0;
-        // 点的是 DOC 里的条目（不是磁盘文件）→ 中间面板先回到矩阵，那张卡片才在视野里
-        const back = () => { if (OPEN.viewer !== 'grid') open({ file: '' }); };
-        row.addEventListener('click', () => { back(); selectChart(id); scrollCardIntoView(id); });
-        row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); back(); selectChart(id); } });
-        row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openRowMenu(row, id); });
-        treeNodes.set(id, { row, to, tn, tk });
-        return row;
-    }
-    function treeGroup(title, ids, hint) {
-        const box = document.createElement('div');
-        const th = document.createElement('div'); th.className = 'th';
-        const t = document.createElement('span'); t.textContent = title;
-        const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = String(ids.length);
-        const h = document.createElement('span'); h.className = 'hint'; h.textContent = hint;
-        th.append(t, cnt, h);
-        box.appendChild(th);
-        if (!ids.length) {
-            const em = document.createElement('div'); em.className = 'empty';
-            em.textContent = title === '我的图' ? '（空：在上面 templates/ 的某一行上右键「从模板新建」）' : '（无）';
-            box.appendChild(em);
-        }
-        for (const id of ids) box.appendChild(treeRow(id));
-        return box;
-    }
-    // 重建整棵树：只在结构变化（增删格 / 载入新文档）时调用；选中/标题/角标由 syncTree 就地刷。
-    // 树只剩两组：磁盘上的 templates/（模板库）与「我的图」。
-    // 原先那组「模板」（内置 ①–⑧ / 实验台 / 0 号输入）已并进 templates/：它们在矩阵里各有一张卡片，
-    // 点卡片照样打开右栏、右键照样「从模板新建」，不必在树里再列一遍（树只留"能新建出图的来源"）。
+    // 重建整棵树：只在结构变化（增删条目 / 载入新文档）时调用；选中态与标题由 syncTreeFiles 就地刷。
     function buildTree() {
-        treeNodes.clear();
         treeEl.innerHTML = '';
-        const user = [];
-        for (const c of DOC.charts) if (!isTemplate(c.id)) user.push(c.id);
-        treeEl.appendChild(treeGroupTplFiles());      // 磁盘上的 templates/：目录 → 列表，文件 → 单视图
-        treeEl.appendChild(treeGroup('我的图', user, '右键：复制/删除'));
-        syncTree();
-    }
-    function syncTree() {
-        for (const [id, n] of treeNodes) {
-            const e = entryOf(id);
-            if (!e) continue;
-            n.row.classList.toggle('sel', id === selected);
-            n.to.textContent = ordOf(id);
-            n.tn.textContent = e.title;
-            const pending = isUserChart(id) && draftDirty(id);
-            const edited = isEdited(e);
-            n.tk.textContent = (pending ? '✎' : '') + (edited ? '●' : '');
-            n.tk.className = 'tk' + (pending ? ' p' : '');
-        }
-        syncTreeFiles();          // 模板文件行的选中态跟着 OPEN.file 走
-    }
-    function scrollCardIntoView(id) {
-        const ch = cellOf(id);
-        if (ch && ch.cell.scrollIntoView) ch.cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        treeEl.appendChild(treeGroupTplFiles());      // templates/：只读预设
+        treeEl.appendChild(treeGroupDspFiles());      // content/My dsps/：我的图（可写）
+        syncTreeFiles();
     }
 
     // ---------- 中心面板路由：open({ file, panel, viewer }) ----------
     // 中间区域不再是"永远是矩阵"，它是一块可换视图的面板，装什么由 open() 决定：
-    //   open({ file: 'templates/inv+zscore.json' }) → viewer=dspview     单个模板文件的预览视图
-    //   open({ file: 'templates/' })               → viewer=dsplistview  模板目录的列表视图
-    //   open({ file: '' })                         → viewer=grid         默认：整张图表矩阵
+    //   open({ file: 'templates/inv+zscore.json' })       → viewer=dspview     单个文件的链路视图
+    //   open({ file: 'content/My dsps/u1.json' })         → viewer=dspview     同上（我的图那条）
+    //   open({ file: 'templates/' | 'content/My dsps/' }) → viewer=dsplistview  某目录的列表视图
+    //   open({ file: '' })                                → viewer=grid        默认：整张图表矩阵
     // viewer 可显式传（校验白名单）；不传就按 file 形态推：以 / 结尾 = 目录 → 列表，否则 = 文件 → 单视图。
     // panel 目前只认 'center'（左栏是树、右栏是编辑器，都不走这套路由），传别的直接忽略。
-    const TPL_DIR_FILE = 'templates/';
     const VIEWS = ['grid', 'dsplistview', 'dspview'];
     const LIST_C_H = 76, ONE_C_H = 200;      // 列表卡片预览 / 单文件大图各自的画布高
     let OPEN = { file: '', panel: 'center', viewer: 'grid' };
     const viewCharts = [];                   // 本视图自建的画布（grid 的格子归 cellCharts，不在这里）
-    const TPLS = [];                         // /api/templates 拉回来的模板文件清单
-    const tplCache = new Map();              // file → 模板（单文件接口取回的，列表里没有的那些）
-    const treeFileNodes = new Map();         // file → 树里那一行，给 syncTreeFiles 就地刷选中态
+    const TPLS = [];                         // /api/templates 拉回来的清单（templates/）
+    const DSPS = [];                         // /api/dsps 拉回来的清单（content/My dsps/ = 我的图）
+    const fileCache = new Map();             // file → 条目（单文件接口取回的、两份清单里都没有的）
+    const treeFileNodes = new Map();         // file → { row, tn }，给 syncTreeFiles 就地刷选中态与标题
     const crumbEl = document.getElementById('crumb');
     const listEl = document.getElementById('dsplist');
     const oneEl = document.getElementById('dspview');
     function viewerOf(file) { return !file ? 'grid' : (file.endsWith('/') ? 'dsplistview' : 'dspview'); }
     function fileNameOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? file : file.slice(i + 1); }
+    // 这个目录里的条目是哪一批（模板 / 我的图）；两条清单结构相同，渲染代码完全共用
+    function itemsOf(dir) { return dir === DIR_DSP ? DSPS : TPLS; }
+    function itemOf(file) { return TPLS.find((t) => t.file === file) || DSPS.find((t) => t.file === file) || null; }
     // 唯一的路由入口：改 OPEN → 重画中间面板 → 同步树上的选中态
     function open(spec) {
         const s = spec || {};
@@ -1024,7 +972,7 @@
             if (ch.paused) paintShot(ch);          // 暂停的格子画的是存档快照，重建位图后要补回来
         }
     }
-    // 面包屑：矩阵 › templates/ › 某文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
+    // 面包屑：矩阵 › 目录 › 某文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
     function renderCrumb() {
         crumbEl.textContent = '';
         const seg = (txt, file, now, title) => {
@@ -1038,17 +986,25 @@
         };
         const sp = () => { const s = document.createElement('span'); s.className = 'sp'; s.textContent = '›'; crumbEl.appendChild(s); };
         seg('矩阵', '', OPEN.viewer === 'grid', '整张图表矩阵（默认视图）');
-        if (OPEN.viewer === 'grid') { seg('📁 templates/', TPL_DIR_FILE, false, '打开模板目录的列表视图'); return; }
+        if (OPEN.viewer === 'grid') {
+            seg('📁 templates/', DIR_TPL, false, '打开模板目录的列表视图');
+            seg('📁 My dsps/', DIR_DSP, false, '打开我的图的列表视图');
+            return;
+        }
+        const dir = dirOf(OPEN.file);
         sp();
-        seg('templates/', TPL_DIR_FILE, OPEN.viewer === 'dsplistview', '模板目录的列表视图');
+        seg(dir, dir, OPEN.viewer === 'dsplistview', dir + ' 的列表视图');
         if (OPEN.viewer === 'dspview') { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
     }
-    // 模板条目的"底部一条"= 参数条 + 播放按钮（与矩阵格子完全同构：画面在上、控件在下）。
-    // 参数只改内存里这一条链的预览值，不落盘 —— 模板是磁盘上的只读文件，要固化就「从模板新建」。
-    function buildTplFoot(host, t, ch) {
+    // 文件条目的"底部一条"= 参数条 + 播放按钮（与矩阵格子完全同构：画面在上、控件在下）。
+    // 参数改的是内存里这一条链：模板是只读文件（要固化就「从模板新建」）；
+    // 我的图直接改到 DOC 那一格上（文件就是它自己的存档），按「保存」才落盘。
+    function buildFileFoot(host, t, ch) {
         const foot = document.createElement('div'); foot.className = 'foot';
         const pbar = document.createElement('div'); pbar.className = 'pbar';
-        pbar.title = '调的是内存里的预览参数，不写回 templates/ 里的文件';
+        pbar.title = isDspFile(t.file)
+            ? '改的是这一条的参数，按「保存」才写回文件'
+            : '调的是内存里的预览参数，不写回 templates/ 里的文件';
         // 参数条上的点击不该冒泡成"打开这条"（卡片整体可点 = 打开链路视图）
         pbar.addEventListener('click', (ev) => ev.stopPropagation());
         const prow = document.createElement('div'); prow.className = 'prow';
@@ -1058,35 +1014,48 @@
         const rstBtn = document.createElement('button');
         rstBtn.type = 'button'; rstBtn.className = 'pb'; rstBtn.textContent = '↺';
         rstBtn.title = '把调过的参数还原成文件里写的那些';
-        rstBtn.addEventListener('click', (ev) => { ev.stopPropagation(); resetTplParams(t); });
+        rstBtn.addEventListener('click', (ev) => { ev.stopPropagation(); resetItemParams(t); });
         prow.append(playBtn, rstBtn);
         foot.append(pbar, prow);
         host.appendChild(foot);
         ch.pbar = pbar; ch.playBtn = playBtn;
-        buildParams(pbar, chartParamSpecs(ch), () => { ch.pipeEl.textContent = pipeSummary(ch); });
+        buildParams(pbar, chartParamSpecs(ch), () => {
+            ch.pipeEl.textContent = pipeSummary(ch);
+            // 我的图的参数是直接改 DOC 那一格的（成品改动）→ 状态位要报"未落盘"，等「保存」写回文件
+            if (isDspFile(t.file)) refreshDirty();
+        });
         renderPlayBtn(ch);
         return foot;
     }
-    // 丢掉内存里改过的那份 stages，下一次 tplStages 会重新按文件内容建一份
-    function resetTplParams(t) { delete t._stages; renderCenter(); }
+    // 还原：模板丢掉内存里那份（下次按文件重建）；我的图把文件里写的链写回 DOC 那一格
+    function resetItemParams(t) {
+        const e = isDspFile(t.file) ? entryOf(stemOf(t.file)) : null;
+        if (e) e.stages = sanitizeStages(t.stages) || [];
+        delete t._stages;
+        renderCenter();
+        if (e) { buildGrid(); refreshDirty(); }
+    }
     // 视图重建出来的画布要接回存档里的暂停状态：置 paused（主循环跳过）+ 把快照画回位图
     function bindViewPause(ch) {
         ch.paused = isPaused(keyOf(ch));
         if (ch.paused) paintShot(ch);
         renderPlayBtn(ch);
     }
-    // dsplistview：templates/ 目录的列表。一格 = 一个模板文件，小画布用实时数据跑同一条链
+    // dsplistview：某个目录的列表。一格 = 一个文件，小画布用实时数据跑同一条链
     function renderList() {
+        const dir = dirOf(OPEN.file);
+        const items = itemsOf(dir);
         listEl.hidden = false;
         listEl.textContent = '';
-        if (!TPLS.length) {
+        if (!items.length) {
             const e = document.createElement('div'); e.className = 'tpl-empty';
-            e.textContent = 'templates/ 下没有模板文件（后端 /api/templates 也没读到）';
+            e.textContent = dir + ' 下还没有 .json'
+                + (dir === DIR_DSP ? '（在 templates/ 的某一行上右键「从模板新建」就能建一条）' : '');
             listEl.appendChild(e);
             return;
         }
-        for (const t of TPLS) {
-            const stages = tplStages(t);
+        for (const t of items) {
+            const stages = stagesOfItem(t);
             const card = document.createElement('div');
             card.className = 'tcard' + (t.file === OPEN.file ? ' sel' : '');
             const nf = document.createElement('div'); nf.className = 'tfile'; nf.textContent = t.file;
@@ -1103,24 +1072,24 @@
                 file: t.file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
                 cv, ctx: cv.getContext('2d'), pipeEl: pp, card, isView: true,
             };
-            buildTplFoot(card, t, ch);
+            buildFileFoot(card, t, ch);
             card.appendChild(ds);
             ch.w = fitCanvas(cv, LIST_C_H);
             bindViewPause(ch);
             charts.push(ch); viewCharts.push(ch);
         }
     }
-    // dspview：单个模板文件的预览视图 —— 大画布 + 参数条/播放按钮 + 逐级算子 + 三个入口按钮。
-    // 只读（模板是磁盘上的文件，不进 DOC）：要固化就「从模板新建」克隆一份进「我的图」。
+    // dspview：单个文件的预览视图 —— 大画布 + 参数条/播放按钮 + 逐级算子 + 入口按钮。
+    // 模板只读（要固化就「从模板新建」）；我的图多了保存 / 编辑 / 复制 / 删除。
     async function renderOne(file) {
         oneEl.hidden = false;
         oneEl.textContent = '';
         const load = document.createElement('div'); load.className = 'tpl-empty'; load.textContent = '读取 ' + file + ' …';
         oneEl.appendChild(load);
-        const t = await getTemplate(file);
+        const t = await getItem(file);
         // 期间用户又点了别的 → 这次渲染作废（renderCenter 已经把视图切成新的了）
         if (!t || OPEN.file !== file || OPEN.viewer !== 'dspview') return;
-        const stages = tplStages(t);
+        const stages = stagesOfItem(t);
         oneEl.textContent = '';
         const nf = document.createElement('div'); nf.className = 'vfile'; nf.textContent = file;
         const vh = document.createElement('div'); vh.className = 'vh'; vh.textContent = t.title;
@@ -1138,75 +1107,142 @@
             stbox.appendChild(chip);
         });
         const tools = document.createElement('div'); tools.className = 'vtools';
-        const mk = (txt, title, fn) => {
+        const mk = (txt, title, fn, cls) => {
             const b = document.createElement('button');
-            b.type = 'button'; b.className = 'lbtn'; b.textContent = txt; b.title = title;
+            b.type = 'button'; b.className = 'lbtn' + (cls ? ' ' + cls : ''); b.textContent = txt; b.title = title;
             b.addEventListener('click', fn);
             tools.appendChild(b);
             return b;
         };
-        mk('从模板新建', '按当前这份（含你调过的参数）克隆一份可编辑的「我的图」，并回到矩阵', () => newFromStagesFile(t));
-        mk('← 模板列表', '回到 templates/ 的列表视图', () => open({ file: TPL_DIR_FILE }));
+        const dir = dirOf(file), mine = dir === DIR_DSP, id = stemOf(file);
+        if (mine) {
+            mk('💾 保存', '把这一条（含调过的参数）写回 ' + file, () => saveDspFile(t), 'primary');
+            mk('✎ 编辑', '在右栏编辑器里改标题 / 说明 / 级联', () => { if (entryOf(id)) selectChart(id); });
+            mk('复制', '克隆成新的一条', () => cloneAsNew(id));
+            mk('删除', '从 content/My dsps/ 里删掉这一条', () => deleteChart(id), 'danger');
+        } else {
+            mk('从模板新建', '按当前这份（含你调过的参数）克隆一份可编辑的「我的图」', () => newFromStagesFile(t), 'primary');
+        }
+        mk('← 列表', '回到 ' + dir + ' 的列表视图', () => open({ file: dir }));
         mk('✕ 回到矩阵', '关掉视图，回到整张图表矩阵', () => open({ file: '' }));
         const ch = {
             file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
             cv, ctx: cv.getContext('2d'), pipeEl: pp, card: oneEl, isView: true,
         };
         oneEl.append(nf, vh, vd, pp, cv);
-        buildTplFoot(oneEl, t, ch);       // 参数条 + 播放/还原：与列表卡片、矩阵格子同一套
+        buildFileFoot(oneEl, t, ch);      // 参数条 + 播放/还原：与列表卡片、矩阵格子同一套
         oneEl.append(stbox, tools);
         ch.w = fitCanvas(cv, ONE_C_H);
         bindViewPause(ch);
         charts.push(ch); viewCharts.push(ch);
     }
-    // 模板的 stages 过一遍 sanitizeStages 再进管道：磁盘文件是手写的，非法 id / 越界参数在这里纠正
-    function tplStages(t) { if (!t._stages) t._stages = sanitizeStages(t.stages) || []; return t._stages; }
-    async function getTemplate(file) {
-        const hit = TPLS.find((t) => t.file === file) || tplCache.get(file);
+    // 条目的 stages：过一遍 sanitizeStages 再进管道（磁盘文件是手写的，非法 id / 越界参数在这里纠正）。
+    // 我的图直接指向 DOC 里同一格 —— 预览与右栏编辑器看的是同一批对象，改哪边都是同一条链。
+    function stagesOfItem(t) {
+        const e = isDspFile(t.file) ? entryOf(stemOf(t.file)) : null;
+        if (e) return e.stages;
+        if (!t._stages) t._stages = sanitizeStages(t.stages) || [];
+        return t._stages;
+    }
+    async function getItem(file) {
+        const hit = itemOf(file) || fileCache.get(file);
         if (hit) return hit;
-        const name = file.indexOf('/') >= 0 ? file.slice(file.lastIndexOf('/') + 1) : file;
+        const api = isDspFile(file) ? '/api/dsps/' : '/api/templates/';
         try {
-            const res = await fetch('/api/templates/' + encodeURIComponent(name), { cache: 'no-store' });
+            const res = await fetch(api + encodeURIComponent(fileNameOf(file)), { cache: 'no-store' });
             if (!res.ok) return null;
             const b = await res.json().catch(() => null);
-            const t = b && b.template;
+            const t = b && b.item;
             if (!t) return null;
-            tplCache.set(t.file, t);
+            fileCache.set(t.file, t);
             return t;
         } catch (e) { return null; }
     }
-    // 目录清单从后端拉（templates/ 在磁盘上，前端不内嵌）；失败就留空，树里显示"（无）"
-    async function loadTemplates() {
+    // 目录清单从后端拉（文件在磁盘上，前端不内嵌）；失败就留空，树里显示空态
+    async function loadDir(url, out) {
         try {
-            const res = await fetch('/api/templates', { cache: 'no-store' });
+            const res = await fetch(url, { cache: 'no-store' });
             const b = await res.json().catch(() => null);
-            const list = (b && Array.isArray(b.templates)) ? b.templates : [];
-            TPLS.length = 0;
-            for (const t of list) if (t && typeof t.file === 'string') TPLS.push(t);
-        } catch (e) { TPLS.length = 0; }
-        buildTree();
+            const list = (b && Array.isArray(b.items)) ? b.items : [];
+            out.length = 0;
+            for (const t of list) if (t && typeof t.file === 'string') out.push(t);
+        } catch (e) { out.length = 0; }
     }
-    // 这份文件的链若与某个内置出厂快照同形 → 返回那个 id：新建的副本记下 from，
-    // 之后「恢复出厂」才有得可回（磁盘文件本身没有"出厂"概念，改了就是改了）
-    function pristineIdForFile(t) {
-        const key = JSON.stringify(tplStages(t).map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p) })));
-        for (const [id, p] of PRISTINE) {
-            if (JSON.stringify(p.stages.map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p) }))) === key) return id;
+    async function loadTemplates() { await loadDir('/api/templates', TPLS); }
+    async function loadDsps() { await loadDir('/api/dsps', DSPS); }
+    // 我的图以文件为准：把 content/My dsps/ 里的条目并进 DOC（右栏编辑器、矩阵格子照旧按 id 找得到），
+    // 文件里没有的那一格 = 已经在别处删掉了 → 从 DOC 摘掉。
+    function mergeDspsIntoDoc() {
+        const keep = new Set(DSPS.map((it) => stemOf(it.file)));
+        DOC.charts = DOC.charts.filter((c) => isTemplate(c.id) || keep.has(c.id));
+        const at = DOC.charts.findIndex((c) => c.id === LAB_ID);
+        const insertAt = at < 0 ? DOC.charts.length : at;
+        const fresh = [];        // 一次性插进去：逐个 splice 会把顺序插反
+        for (const it of DSPS) {
+            const id = stemOf(it.file);
+            const stages = sanitizeStages(it.stages) || [];
+            const e = DOC.charts.find((c) => c.id === id);
+            if (e) { e.title = it.title; e.desc = it.desc; e.stages = stages; }
+            else fresh.push({ id, title: it.title, desc: it.desc, stages });
         }
-        return '';
+        DOC.charts.splice(insertAt, 0, ...fresh);
+        lastSaved = entryDocJson(DOC);      // 文件就是存档，并完不该报"未落盘"
+        if (selected && !entryOf(selected)) { selected = ''; viewOf().openedTabs = []; }
+        drafts.clear(); bindDraft();
+        buildGrid(); syncEditorInputs(); labSync(true); applyView(); refreshDirty();
     }
-    // 「从模板新建」的磁盘版：把这份文件的链克隆成一份「我的图」（文件本身不动），随后回矩阵看它
+    // 「从模板新建」：把这份文件的链克隆成一条我的图（模板文件本身不动）。
+    // 不记 from —— 创建出来就是独立一条，与来源再无关系。
     function newFromStagesFile(t) {
-        const stages = tplStages(t).map(cloneStage);
+        const stages = stagesOfItem(t).map(cloneStage);
         const title = t.title || fileNameOf(t.file);
         const dup = DOC.charts.some((c) => !isTemplate(c.id) && c.title === title);
-        addUserChart({
-            title: title + (dup ? ' 副本' : ''), desc: t.desc || '', stages,
-            from: pristineIdForFile(t) || undefined,
-        });
-        open({ file: '' });
+        addUserChart({ title: title + (dup ? ' 副本' : ''), desc: t.desc || '', stages });
     }
-    // ---------- 树里的模板目录：目录行 → dsplistview，文件行 → dspview ----------
+    // ---- 我的图的文件读写：一个 id 一个文件（content/My dsps/<id>.json） ----
+    async function postDsp(url, method, body) {
+        try {
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: body ? JSON.stringify(body) : undefined,
+            });
+            const b = await res.json().catch(() => null);
+            if (!res.ok) { storeState = 'error'; storeMsg = (b && b.error) || `HTTP ${res.status}`; refreshDirty(); return null; }
+            return b;
+        } catch (e) {
+            storeState = 'error'; storeMsg = '连不上后端，改动只在内存里'; refreshDirty();
+            return null;
+        }
+    }
+    function upsertDspItem(item) {
+        if (!item || !item.file) return;
+        delete item._stages;
+        const i = DSPS.findIndex((x) => x.file === item.file);
+        if (i >= 0) DSPS[i] = item; else DSPS.push(item);
+        buildTree();
+    }
+    async function putDsp(id, body) {
+        const b = await postDsp('/api/dsps/' + encodeURIComponent(id + '.json'), 'POST', body);
+        const item = b && b.item;
+        if (!item) return null;
+        upsertDspItem(item);
+        storeState = 'ok'; storeMsg = ''; refreshDirty();
+        return item;
+    }
+    async function saveDspFile(t) {
+        const id = stemOf(t.file), e = entryOf(id);
+        if (!e) return;
+        await putDsp(id, { title: e.title, desc: e.desc, stages: e.stages });
+    }
+    // 保存时把每一条我的图各自写回自己的文件（DOC 那份整份写 /api/doc，两者内容同源）
+    async function saveAllDspFiles() {
+        for (const c of DOC.charts) {
+            if (isTemplate(c.id)) continue;
+            await putDsp(c.id, { title: c.title, desc: c.desc, stages: c.stages });
+        }
+    }
+    // ---------- 树里的两个目录：目录行 → dsplistview，文件行 → dspview ----------
     function treeFileRow(file, label, cls) {
         const row = document.createElement('div');
         row.className = 'tnode ' + cls;
@@ -1214,33 +1250,48 @@
         const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = label;
         row.append(to, tn);
         row.tabIndex = 0;
-        row.title = cls === 'dir' ? '模板目录：打开 templates/ 的列表视图（dsplistview）'
-            : '模板文件：打开这一条的预览视图（dspview）';
+        row.title = cls === 'dir'
+            ? '目录：打开 ' + file + ' 的列表视图（dsplistview）'
+            : file + '：打开这一条的链路视图（dspview）';
         row.addEventListener('click', () => open({ file }));
         row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open({ file }); } });
         row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openFileMenu(row, file); });
-        treeFileNodes.set(file, row);
+        treeFileNodes.set(file, { row, tn });
         return row;
     }
-    function treeGroupTplFiles() {
+    // 一组 = 一个目录：标题 + 目录行 + 目录下每个文件一行
+    function treeGroupFiles(title, dir, hint, items, emptyText, labelOf) {
         const box = document.createElement('div');
         const th = document.createElement('div'); th.className = 'th';
-        const t = document.createElement('span'); t.textContent = '模板文件';
-        const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = String(TPLS.length);
-        const h = document.createElement('span'); h.className = 'hint'; h.textContent = '磁盘 · 只读';
+        const t = document.createElement('span'); t.textContent = title;
+        const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = String(items.length);
+        const h = document.createElement('span'); h.className = 'hint'; h.textContent = hint;
         th.append(t, cnt, h);
         box.appendChild(th);
-        box.appendChild(treeFileRow(TPL_DIR_FILE, 'templates/', 'dir'));
-        if (!TPLS.length) {
+        box.appendChild(treeFileRow(dir, dir, 'dir'));
+        if (!items.length) {
             const em = document.createElement('div'); em.className = 'empty';
-            em.textContent = '（空：templates/ 下没有 .json）';
+            em.textContent = emptyText;
             box.appendChild(em);
         }
-        for (const t of TPLS) box.appendChild(treeFileRow(t.file, t.name, 'file'));
+        for (const it of items) box.appendChild(treeFileRow(it.file, labelOf(it), 'file'));
         return box;
     }
+    function treeGroupTplFiles() {
+        return treeGroupFiles('模板文件', DIR_TPL, '磁盘 · 只读', TPLS,
+            '（空：templates/ 下没有 .json）', (it) => it.name);
+    }
+    function treeGroupDspFiles() {
+        return treeGroupFiles('我的图', DIR_DSP, '磁盘 · 可写', DSPS,
+            '（空：在 templates/ 的某一行上右键「从模板新建」）', (it) => it.title || it.name);
+    }
+    // 选中态 + 我的图那一行的标题（标题可改，改名后树要跟着变）
     function syncTreeFiles() {
-        for (const [file, row] of treeFileNodes) row.classList.toggle('sel', file === OPEN.file);
+        for (const [file, n] of treeFileNodes) {
+            n.row.classList.toggle('sel', file === OPEN.file);
+            const it = itemOf(file);
+            if (it && isDspFile(file) && n.tn.textContent !== (it.title || it.name)) n.tn.textContent = it.title || it.name;
+        }
     }
     // ---------- 右键菜单：模板与「我的图」两种菜单 ----------
     // 挂在 body 上：行/卡片在布局流里，浮层若作为它们的子元素会被行高/栅格布局挤压变形。
@@ -1258,22 +1309,29 @@
             return items;
         }
         const items = [['复制', '深克隆成一份新的「我的图」，并跳到该副本；本份不动', () => cloneAsNew(id), '']];
-        if (canReset(id)) {
-            items.push(['恢复出厂', `把这一份恢复成模板 ${ordOf(e.from)} 的出厂状态`, () => resetToDefault(id), '']);
-        }
-        items.push(['删除', '从「我的图」里移除（按保存才落盘，刷新可恢复）', () => deleteChart(id), 'danger']);
+        items.push(['删除', '删掉这一条（连 content/My dsps/ 里的文件一起）', () => deleteChart(id), 'danger']);
         return items;
     }
     function openRowMenu(anchor, id) { openMenuAt(anchor, menuItemsFor(id)); }
-    // 模板文件行的菜单：打开视图 + 「从模板新建」—— 旧「模板」那组行的功能现在落在这一行上。
-    // 目录行没有"从模板新建"（目录不是一条链），只有「打开列表」。
+    // 文件行的菜单：目录行只有「打开列表」；文件行按目录给不同的动作
+    //   templates/    → 从模板新建（模板只读，只能克隆出自己的一条）
+    //   My dsps/      → 编辑 / 复制 / 删除（自己的文件，可改可删）
     function fileMenuItems(file) {
-        const t = TPLS.find((x) => x.file === file);
+        const t = itemOf(file);
         const isDir = file.endsWith('/');
         const items = [[isDir ? '打开列表' : '预览DSP',
-            isDir ? 'templates/ 的列表视图（dsplistview）' : `打开 ${file} 的预览视图（dspview）`,
+            isDir ? file + ' 的列表视图（dsplistview）' : `打开 ${file} 的链路视图（dspview）`,
             () => open({ file }), '']];
-        if (t) items.push(['从模板新建', '把这份模板克隆成一份可编辑的「我的图」', () => newFromStagesFile(t), '']);
+        if (!t || isDir) return items;
+        if (isDspFile(file)) {
+            const id = stemOf(file);
+            items.push(['编辑', '在右栏编辑器里改标题 / 说明 / 级联', () => { if (entryOf(id)) selectChart(id); }, '']);
+            items.push(['保存', '把这一条写回文件', () => saveDspFile(t), '']);
+            items.push(['复制', '克隆成新的一条', () => cloneAsNew(id), '']);
+            items.push(['删除', '从 content/My dsps/ 里删掉这一条', () => deleteChart(id), 'danger']);
+        } else {
+            items.push(['从模板新建', '把这份模板克隆成一份可编辑的「我的图」', () => newFromStagesFile(t), '']);
+        }
         return items;
     }
     function openFileMenu(anchor, file) { openMenuAt(anchor, fileMenuItems(file)); }
@@ -1503,7 +1561,7 @@
         for (const ch of cellCharts) {       // 各格 ✎ 角标跟随草稿状态（在右栏改草稿时卡片没重渲染过）
             if (ch.entry) ch.pmarkEl.style.display = !ch.ro && draftDirty(ch.entry.id) ? '' : 'none';
         }
-        syncTree();                          // 树上的选中高亮 / 标题 / ✎● 也跟着刷（它不随 buildGrid 重建）
+        syncTreeFiles();                     // 树上文件行的选中态 / 标题也跟着刷（它不随 buildGrid 重建）
     }
     // 草稿 → 输入框。正在输入的那一格跳过，避免打字时被回写打断
     function syncEditorInputs() {
@@ -1570,6 +1628,8 @@
         lastSaved = entryDocJson(DOC);                     // 先乐观置为已存：界面立刻干净
         refreshDirty();
         const ok = await saveDocToServer(DOC, !commit);     // 只写视图的后台存盘，不亮"保存中…"
+        // 我的图各写各的文件：DOC 整份写一份，content/My dsps/ 里每条再各写一份（内容同源）
+        if (ok && commit) await saveAllDspFiles();
         lastSaved = ok ? entryDocJson(DOC) : prev;         // 失败就把基线退回去，状态位重新亮起来
         refreshDirty();
     }
@@ -1589,8 +1649,14 @@
         if (ch) renderCell(ch);
         syncEditorInputs(); labSync(true); refreshDirty();
     }
-    function newChartId() { let i = 1; while (DOC.charts.some((c) => c.id === 'u' + i)) i++; return 'u' + i; }
-    // 新建一份「我的图」：套模板内容（可编辑），from 记下来源模板 → 以后能「恢复出厂」回那一天。
+    // id = 文件名（u1、u2…），所以要把两份清单里的名字都避开，不能只查 DOC
+    function newChartId() {
+        let i = 1;
+        const used = (id) => DOC.charts.some((c) => c.id === id) || DSPS.some((it) => stemOf(it.file) === id);
+        while (used('u' + i)) i++;
+        return 'u' + i;
+    }
+    // 新建一份「我的图」：套模板内容（可编辑）。不记 from —— 建出来就是独立一条。
     // 标题同名就加"副本"，免得树里两行一模一样的字。
     function newFromTemplate(tplId) {
         const t = entryOf(tplId);
@@ -1600,7 +1666,6 @@
             title: t.title + (dup ? ' 副本' : ''),
             desc: t.desc,
             stages: t.stages,
-            from: PRISTINE.has(tplId) ? tplId : undefined,   // 有出厂快照才记来源（实验台/输入没有 → 不记）
         });
     }
     // 复制：把来源深克隆一份成新的「我的图」，并跳到该副本接着编辑。来源那一份不动。
@@ -1612,31 +1677,41 @@
             title: src.title.replace(/ 副本( \d+)?$/, '') + ' 副本',
             desc: src.desc,
             stages: src.stages,
-            from: src.from || (PRISTINE.has(src.id) ? src.id : undefined),
         });
     }
-    // 落一份新的用户图（插在实验台之前 → 树里"我的图"按新建顺序排）：深克隆，与来源没有任何共享引用
+    // 落一份新的我的图：插在实验台之前（矩阵里按新建顺序排），深克隆 → 与来源没有任何共享引用。
+    // 同步在 content/My dsps/<id>.json 建文件；文件建好后跳到那一条（新建完总得看到它）。
     function addUserChart(spec) {
-        const e = { id: newChartId(), title: spec.title, desc: spec.desc, stages: spec.stages.map(cloneStage) };
-        if (spec.from) e.from = spec.from;
+        const id = newChartId();
+        const e = { id, title: spec.title, desc: spec.desc, stages: spec.stages.map(cloneStage) };
         const at = DOC.charts.findIndex((c) => c.id === LAB_ID);
         DOC.charts.splice(at < 0 ? DOC.charts.length : at, 0, e);
         selectChart(e.id);
         buildGrid(); labSync(true); refreshDirty();
+        postDsp('/api/dsps', 'POST', { name: id, title: e.title, desc: e.desc, stages: e.stages })
+            .then((b) => {
+                if (!b || !b.item) return;                 // 建文件失败：内存里这一条还在，提示已经在状态位上
+                upsertDspItem(b.item);
+                open({ file: b.item.file });               // 文件就位了再跳，避免视图去取一个还没落盘的文件
+            });
+        return e;
     }
-    // 删除（成品侧操作，由格子的 ⋯ 菜单触发）：从 DOC 摘掉，它自己的草稿跟着一起消失，
-    // 别的格的草稿不受影响。删除只是成品改动，按「保存」才落盘；本页刷新就恢复。
+    // 删除：从 DOC 摘掉 + 删掉它的文件。文件删掉就是删掉，没有"刷新恢复"这回事了。
     function deleteChart(id) {
         const i = DOC.charts.findIndex((c) => c.id === id);
         if (i < 0) return;
-        if (!confirm(`删除「${DOC.charts[i].title}」？\n删除后按「保存」才落盘；本页刷新就恢复。`)) return;
-        const lostDraft = draftDirty(id) ? '\n（这一格还有未保存的草稿，会一起丢掉）' : '';
+        if (!confirm(`删除「${DOC.charts[i].title}」？\n会连 content/My dsps/${id}.json 一起删掉。`)) return;
+        const lostDraft = draftDirty(id) ? '\n（这一条还有未保存的草稿，会一起丢掉）' : '';
         DOC.charts.splice(i, 1);
         drafts.delete(id);
-        if (id === selected) commitClose();   // 删的就是正在编辑的那格 → 右栏直接空态（VSCode 关标签）
+        const fi = DSPS.findIndex((it) => stemOf(it.file) === id);
+        if (fi >= 0) DSPS.splice(fi, 1);
+        if (id === selected) commitClose();   // 删的就是正在编辑的那条 → 右栏直接空态（VSCode 关标签）
         buildGrid();
         syncEditorInputs(); labSync(true); refreshDirty();
-        if (lostDraft) alert('已删除，该格未保存的草稿一并丢弃' + lostDraft.trim());
+        postDsp('/api/dsps/' + encodeURIComponent(id + '.json'), 'DELETE').then(() => buildTree());
+        if (OPEN.file === DIR_DSP + id + '.json') open({ file: DIR_DSP });   // 正开着它 → 退回列表
+        if (lostDraft) alert('已删除，该条未保存的草稿一并丢弃' + lostDraft.trim());
     }
     // 备好第一份草稿：右栏所有画布（输出图 / 逐级卡）都从 DRAFT 取数据，必须早于它们建对象
     bindDraft();
@@ -1936,7 +2011,9 @@
             const ok = await saveDocToServer(migrate);
             if (ok) adoptDoc(migrate);
         }
-        await loadTemplates();     // templates/ 的清单：树里的目录组 + 中间两个视图都靠它
+        await loadTemplates();     // templates/ 的清单（只读预设）
+        await loadDsps();          // content/My dsps/ 的清单（我的图，文件就是存档）
+        mergeDspsIntoDoc();        // 文件为准 → 并进 DOC，右栏编辑器与矩阵格子照旧按 id 找得到
         renderCenter();            // 起手是矩阵视图（顺带把面包屑画出来）
         refreshDirty();
     })();
