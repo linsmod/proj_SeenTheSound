@@ -58,7 +58,13 @@ python server.py
 | 路由 | 说明 |
 | --- | --- |
 | `GET /` | 返回 `index.html` |
-| `GET /matrix` | 返回 `matrix.html`（Sound DSP页：管道位置 × 变换函数 的图表矩阵，数据源同 `/stream`） |
+| `GET /dsp-lab` | 返回 `dsp-lab.html`（Sound DSP 实验室页：管道位置 × 变换函数 的图表矩阵，数据源同 `/stream`） |
+| `GET /api/tree` | 扫 `content/` 返回目录树 + 全部 `.json` 条目 —— DSP 页左栏文件树与其索引的唯一来源 |
+| `GET /api/item?path=content/…json` | 按完整相对路径取单个 DSP 文件条目 |
+| `GET/POST/DELETE /api/shots/<name>.png` | 画布快照：GET 取图 / POST 存图（体内 `data:image/png;base64,…`）/ DELETE 删除，落在 `content/Snapshots/` |
+| `GET /api/doc` · `POST /api/doc` | 读取 / 整份写回 `content/ViewState/dsp-lab.json`（图表 + 视图状态） |
+| `GET /api/templates` · `GET /api/templates/<name>` | 列出 / 读取 `content/Templates/` 下的只读预设 |
+| `GET /api/dsps` · `POST /api/dsps[/<name>]` · `DELETE /api/dsps/<name>` | 列出 / 新建 / 写回 / 删除 `content/My dsps/` 下的「我的图」 |
 | `GET /stream` | SSE 频谱推流（60fps）：`s` 字节频谱、`gate` 门控矩阵、`freqs`/`bpo`（CQT）或 `binHz`（FFT）、`fps`/`rfps`/`err` |
 | `GET /set_smoothing?v=0.6` | EMA 平滑系数（0~0.95） |
 | `GET /set_a4?v=440` | 音准参考 A4（400~480），CQT 栅格与门控映射随之重建 |
@@ -69,9 +75,19 @@ python server.py
 
 ```
 mySoundZoneGrid/
-├── index.html   # 前端单文件：布局、Canvas 绘制、SSE 客户端、侧栏图表
-├── server.py    # Flask 后端：麦克风采集 → FFT/CQT → 门控 → SSE
-├── image.png    # README 截图
+├── index.html              # 主面板前端：布局、Canvas 绘制、SSE 客户端、侧栏图表
+├── dsp-lab.html            # DSP 实验室页（/dsp-lab）：管道位置 × 变换函数的图表矩阵
+├── server.py               # Flask 后端：麦克风采集 → FFT/CQT → 门控 → SSE + content/ 读写接口
+├── content/                # 内容根：DSP 页左栏文件树就是它的目录结构（只列 .json）
+│   ├── Templates/          # 出厂预设（只读）
+│   ├── My dsps/            # 我的图（可读写，一个 id 一个 .json）
+│   ├── Snapshots/          # 画布快照 PNG（暂停时落盘，恢复播放时删除）
+│   ├── ViewState/          # dsp-lab.json：DSP 页的图表 + 视图状态
+│   ├── Compares/           # 预留分类目录
+│   ├── Favorates/          # 预留分类目录
+│   └── Recents/            # 预留分类目录
+├── image.png               # README 截图
+├── matrix.md               # 「位置 × 函数」的说明笔记
 └── README.md
 ```
 

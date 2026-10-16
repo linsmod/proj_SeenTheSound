@@ -40,6 +40,7 @@ bin 不均匀问题：
 """
 import argparse
 import base64
+import binascii
 import json
 import os
 import re
@@ -543,10 +544,10 @@ def index():
     return send_from_directory(HERE, "index.html")
 
 
-@app.route("/matrix")
-def matrix():
-    """Sound DSP页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
-    return send_from_directory(HERE, "matrix.html")
+@app.route("/dsp-lab")
+def dsp_lab():
+    """Sound DSP 实验室页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
+    return send_from_directory(HERE, "dsp-lab.html")
 
 
 @app.route("/stream")
@@ -556,11 +557,11 @@ def stream():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-# ---- Sound DSP页的文档存储：一张 JSON 落在项目目录里 ----
+# ---- Sound DSP 实验室页的文档存储：一张 JSON 落在 content/ViewState/ 里 ----
 # 左栏 = 带预览的文件列表，右栏 = 编辑器标签页；保存/读取都走后端，
 # 存档跟着项目走（换浏览器、清缓存都不丢），也方便直接用编辑器/git 看 diff。
 # 落盘用"先写临时文件再改名"的原子替换：写到一半断电不会留下半个坏 JSON。
-DOC_PATH = os.path.join(HERE, "matrix-doc.json")
+DOC_PATH = os.path.join(HERE, "content", "ViewState", "dsp-lab.json")
 
 
 @app.route("/api/doc", methods=["GET"])
@@ -600,17 +601,23 @@ def api_doc_post():
     return jsonify({"ok": True, "path": DOC_PATH, "charts": len(body["charts"])})
 
 
-# ---- 两类 DSP 文件目录：一个文件 = 一条链 { title, desc, from?, stages } ----
-#   templates/        出厂预设，只读接口（要改由前端「从模板新建」克隆成自己的图）
-#   content/My dsps/  我的图，可读写（新建 / 改名 / 改链 / 删除）
-# 两者格式相同、接口同形，前端用同一套列表视图与单文件视图渲染，只差"能不能写回"。
-TPL_DIR = os.path.join(HERE, "templates")
-TPL_PREFIX = "templates/"
-DSP_DIR = os.path.join(HERE, "content", "My dsps")
+# ---- 内容根：content/ 下的全部 DSP 文件与视图状态 ----
+#   content/Templates/  出厂预设，只读（要改由前端「从模板新建」克隆成自己的图）
+#   content/My dsps/    我的图，可读写（新建 / 改名 / 改链 / 删除）
+#   content/Snapshots/  画布快照 PNG（暂停时落盘，恢复播放时删掉）
+#   content/ViewState/  dsp-lab.json（页面文档：图表 + 视图状态）
+# 前端左栏的树直接扫 content/ 生成（/api/tree），只列 .json；目录结构即磁盘结构。
+CONTENT_DIR = os.path.join(HERE, "content")
+CONTENT_PREFIX = "content/"
+TPL_DIR = os.path.join(CONTENT_DIR, "Templates")
+TPL_PREFIX = "content/Templates/"
+DSP_DIR = os.path.join(CONTENT_DIR, "My dsps")
 DSP_PREFIX = "content/My dsps/"
+SHOT_DIR = os.path.join(CONTENT_DIR, "Snapshots")
+SHOT_PREFIX = "content/Snapshots/"
 # 我的图的文件名 = 图的 id（u1、u2…）：身份稳定，改标题不必改名，也不会撞中文名/空格
 DSP_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-# 内置 id 不落"我的图"：它们是出厂内容，只在 matrix-doc.json / templates/ 里
+# 内置 id 不落"我的图"：它们是出厂内容，只在 content/ViewState/dsp-lab.json / content/Templates/ 里
 BUILTIN_IDS = {"input", "lab"} | {f"c{i}" for i in range(1, 9)}
 
 
@@ -683,7 +690,7 @@ def _dsp_write(name, body):
 
 
 def _dsp_migrate_once():
-    """首次访问我的图：把 matrix-doc.json 里的用户图（非内置 id）搬成 content/My dsps/*.json。
+    """首次访问我的图：把 content/ViewState/dsp-lab.json 里的用户图（非内置 id）搬成 content/My dsps/*.json。
     目录里已经有文件就什么都不做 —— 迁移只发生一次，之后文件才是真相。"""
     try:
         if any(n.endswith(".json") for n in os.listdir(DSP_DIR)):
@@ -704,9 +711,132 @@ def _dsp_migrate_once():
         _dsp_write(cid, c)
 
 
+# ---- content/ 目录树：前端左栏的树据此渲染（目录结构 = 磁盘结构，文件只列 .json） ----
+def _content_tree(dirpath, prefix):
+    """递归扫一个目录 → 节点表：目录节点（带 children）在前，.json 文件节点在后，各自按名排序。
+
+    非 .json 文件不进树（快照 PNG、ViewState 之外的杂项）：树是"能打开的 DSP 文件"的导航。
+    坏 JSON / 越界名由 _dir_item 兜住 —— 解不出来就当这个文件不存在。
+    """
+    try:
+        names = sorted(os.listdir(dirpath))
+    except FileNotFoundError:
+        return []
+    dirs, files = [], []
+    for n in names:
+        if n.startswith("."):
+            continue
+        p = os.path.join(dirpath, n)
+        if os.path.isdir(p):
+            child = prefix + n + "/"
+            dirs.append({"kind": "dir", "name": n, "path": child,
+                         "children": _content_tree(p, child)})
+        elif n.endswith(".json"):
+            item = _dir_item(dirpath, prefix, n)
+            if item:
+                files.append({"kind": "file", "name": n, "path": item["file"], "title": item["title"],
+                              "desc": item["desc"], "stages": item["stages"]})
+    return dirs + files
+
+
+def _flatten_files(nodes, out):
+    """把树里的文件节点摊平成条目列表（前端 itemOf / itemsOf 用的索引）。"""
+    for nd in nodes:
+        if nd["kind"] == "file":
+            out.append({"file": nd["path"], "name": nd["name"][:-5], "title": nd["title"],
+                        "desc": nd["desc"], "stages": nd["stages"]})
+        else:
+            _flatten_files(nd["children"], out)
+    return out
+
+
+@app.route("/api/tree")
+def api_tree():
+    """整棵 content/ 树：目录结构 + 每个 .json 的条目（带 title/desc/stages）。
+
+    前端一次拉回即可渲染左栏树并建索引，不必再按目录逐个拉清单。
+    """
+    tree = _content_tree(CONTENT_DIR, CONTENT_PREFIX)
+    return jsonify({"root": CONTENT_PREFIX, "tree": tree, "files": _flatten_files(tree, [])})
+
+
+@app.route("/api/item")
+def api_item():
+    """按完整相对路径（content/ 下）取单个文件条目：树清单之外新加的文件也能直接打开。"""
+    rel = request.args.get("path", "")
+    if not isinstance(rel, str):
+        return jsonify({"error": "路径不合法"}), 400
+    rel = rel.replace("\\", "/")
+    if ".." in rel or not rel.startswith(CONTENT_PREFIX) or not rel.endswith(".json"):
+        return jsonify({"error": "路径不合法"}), 400
+    base = os.path.abspath(CONTENT_DIR)
+    full = os.path.abspath(os.path.join(HERE, *[s for s in rel.split("/") if s]))
+    if not full.startswith(base + os.sep):
+        return jsonify({"error": "路径越界"}), 400
+    dirpath, fname = os.path.split(full)
+    sub = os.path.relpath(dirpath, base).replace("\\", "/")
+    prefix = CONTENT_PREFIX + ("" if sub == "." else sub + "/")
+    item = _dir_item(dirpath, prefix, fname)
+    if not item:
+        return jsonify({"error": "这一条不存在或不是合法 JSON"}), 404
+    return jsonify({"item": item})
+
+
+# ---- 画布快照：暂停时前端把画布 toDataURL 出的 PNG 交给后端落盘，恢复播放时删掉 ----
+SHOT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.png$")
+MAX_SHOT_BYTES = 4 * 1024 * 1024     # 单张快照上限；超了拒绝写入（画布导出通常只有几十 KB）
+
+
+@app.route("/api/shots/<path:name>", methods=["GET", "POST", "DELETE"])
+def api_shot(name):
+    """content/Snapshots/<name> 的读 / 写 / 删；GET 直接返回 PNG 本体（前端 <img> 直接加载）。
+
+    POST 体 = { data: 'data:image/png;base64,...' }（canvas.toDataURL 的原样输出）。
+    落盘同样先写 .tmp 再改名：任何时候读到的都是完整的 PNG。
+    """
+    if not SHOT_NAME_RE.match(name or ""):
+        return jsonify({"error": "快照文件名不合法"}), 400
+    p = os.path.join(SHOT_DIR, name)
+    if request.method == "GET":
+        if not os.path.isfile(p):
+            return jsonify({"error": "没有这张快照"}), 404
+        return send_from_directory(SHOT_DIR, name, mimetype="image/png")
+    if request.method == "DELETE":
+        try:
+            os.remove(p)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            return jsonify({"error": f"删除失败：{e}"}), 500
+        return jsonify({"ok": True, "name": name})
+    body = request.get_json(silent=True)
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, str) or not data.startswith("data:image/png;base64,"):
+        return jsonify({"error": "请求体必须是 {data:'data:image/png;base64,...'}"}), 400
+    try:
+        raw = base64.b64decode(data.split(",", 1)[1])
+    except (ValueError, binascii.Error):
+        return jsonify({"error": "PNG base64 解码失败"}), 400
+    if len(raw) > MAX_SHOT_BYTES:
+        return jsonify({"error": "快照过大，拒绝写入"}), 413
+    os.makedirs(SHOT_DIR, exist_ok=True)
+    tmp = p + ".tmp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        os.replace(tmp, p)
+    except OSError as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return jsonify({"error": f"写入失败：{e}"}), 500
+    return jsonify({"ok": True, "file": SHOT_PREFIX + name, "url": "/api/shots/" + name})
+
+
 @app.route("/api/templates")
 def api_templates():
-    """列出 templates/ 下全部 .json（带 title/desc/stages，列表视图不必再逐个取）。"""
+    """列出 content/Templates/ 下全部 .json（带 title/desc/stages，列表视图不必再逐个取）。"""
     return jsonify({"dir": TPL_PREFIX, "items": _dir_list(TPL_DIR, TPL_PREFIX)})
 
 
