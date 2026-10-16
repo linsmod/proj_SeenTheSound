@@ -330,7 +330,7 @@
             <span>音级反相平坦度比对3（滑动平均）</span>
             <span style="display:flex; align-items:center; gap:6px;">
                 <span class="gpVal" id="sfmRef3Val" style="min-width:0;">--</span>
-                <span class="info-i" title="历史滑动平均：过去 N 秒该音级 SFM 的平均，作为该音级自己的常态参考。先取反（1-v），只显示高于参考值的部分。"><i>i</i></span>
+                <span class="info-i" title="历史滑动平均：过去 N 秒该音级 SFM 的平均，作为该音级自己的常态参考。参考值在采样写入时冻结：改窗口只影响之后的新点，历史曲线不变。先取反（1-v），只显示高于参考值的部分。"><i>i</i></span>
             </span>
             <div style="display:flex; gap:6px; align-items:center; font-size:10px; color:#bcc8e8;">
                 <span>窗N(秒):</span><input id="ref3WinSec" type="number" value="5" style="width:40px; font-size:10px;"/>
@@ -343,7 +343,7 @@
             <span>音级反相平坦度比对4（EMA）</span>
             <span style="display:flex; align-items:center; gap:6px;">
                 <span class="gpVal" id="sfmRef4Val" style="min-width:0;">--</span>
-                <span class="info-i" title="指数移动平均：给近期更高权重的时间平均，适合跟踪缓慢变化的音色。先取反（1-v），只显示高于参考值的部分。"><i>i</i></span>
+                <span class="info-i" title="指数移动平均：给近期更高权重的时间平均，适合跟踪缓慢变化的音色。EMA 在采样写入时递推冻结：改 α 只影响之后的新点，历史曲线不变。先取反（1-v），只显示高于参考值的部分。"><i>i</i></span>
             </span>
             <div style="display:flex; gap:6px; align-items:center; font-size:10px; color:#bcc8e8;">
                 <span>EMA α:</span><input id="ref4EmaAlpha" type="number" value="0.2" style="width:40px; font-size:10px;"/>
@@ -356,7 +356,7 @@
             <span>音级反相平坦度比对5（历史分位数）</span>
             <span style="display:flex; align-items:center; gap:6px;">
                 <span class="gpVal" id="sfmRef5Val" style="min-width:0;">--</span>
-                <span class="info-i" title="历史分位数：过去 N 秒内该音级的指定分位数（如 50% 中位数），作为它自己的典型水平。先取反（1-v），只显示高于参考值的部分。"><i>i</i></span>
+                <span class="info-i" title="历史分位数：过去 N 秒内该音级的指定分位数（如 50% 中位数），作为它自己的典型水平。参考值在采样写入时冻结：改窗口/分位只影响之后的新点，历史曲线不变。先取反（1-v），只显示高于参考值的部分。"><i>i</i></span>
             </span>
             <div style="display:flex; gap:6px; align-items:center; font-size:10px; color:#bcc8e8;">
                 <span>窗N(秒):</span><input id="ref5WinSec" type="number" value="5" style="width:40px; font-size:10px;"/>
@@ -596,6 +596,55 @@
                 }
                 sfmLines[base + p] = n ? Math.exp(sl / n) / (sa / n) : 0;
             }
+        }
+    }
+
+    // ---------- 比对3/4/5 参考值（写入时冻结，与 chartAct/chartLit 同一套作业） ----------
+    // 每个采样写入瞬间按当时的窗口参数算好参考值存进环形缓存，画图只读不重算：
+    // 之后改 窗N(秒) / EMA α / 分位 只作用于新采样，历史曲线保持冻结（新旧参数阶梯过渡）。
+    const sfmDisp = new Float32Array(CHART_N * SFM_CH); // 每采样按当时 sfmWinK 合成的显示 SFM
+    const ref3Ring = new Float32Array(CHART_N * 12);    // 比对3：过去 N 秒滑动平均参考（1-v 后）
+    const ref4Ring = new Float32Array(CHART_N * 12);    // 比对4：EMA 参考（1-v 后）
+    const ref5Ring = new Float32Array(CHART_N * 12);    // 比对5：过去 N 秒分位数参考（1-v 后）
+    const ref4EmaState = new Float32Array(12);          // EMA 递推状态（跨采样持续，改 α 不回溯）
+    let ref4EmaInited = false;
+    const qScratch = new Float64Array(CHART_N);         // 分位数排序暂存（复用，避免每采样新建数组）
+    // 参考参数（右侧三个输入框 change 事件修改这里）：声明在写入端，updateBuffers 写入时读取
+    let ref3WinSec = 5, ref4EmaAlpha = 0.2, ref5WinSec = 5, ref5Pct = 0.5;
+
+    // 写入时冻结：idx = 本次采样写入位置（chartWrite，写指针自增前调用）
+    function freezeSfmRefs(idx) {
+        // 1) 该采样的显示 SFM：与 sfmFillLines 同公式，窗口 = 当前 sfmWinK，终点 = idx
+        const dispBase = idx * SFM_CH;
+        const K = Math.max(1, Math.min(CHART_N, sfmWinK));
+        for (let ch = 0; ch < SFM_CH; ch++) {
+            let sl = 0, sa = 0, n = 0;
+            for (let k = 0; k < K; k++) {
+                const o = ((idx - k + CHART_N) % CHART_N) * SFM_CH + ch;
+                sl += sfmSl[o]; sa += sfmSa[o]; n += sfmN[o];
+            }
+            sfmDisp[dispBase + ch] = n ? Math.exp(sl / n) / (sa / n) : 0;
+        }
+        const win3 = Math.max(1, Math.round(ref3WinSec * CHART_HZ));
+        const win5 = Math.max(1, Math.round(ref5WinSec * CHART_HZ));
+        const alpha = ref4EmaAlpha;
+        const at = (k) => ((idx - k + CHART_N) % CHART_N) * SFM_CH;  // k=0 本采样，k 越大越旧
+        for (let pc = 0; pc < 12; pc++) {
+            const x = 1.0 - sfmDisp[dispBase + 1 + pc];   // 先取反，与三个图表口径一致
+            // 比对3：过去 win3 个采样的滑动平均
+            let sum = 0;
+            for (let k = 0; k < win3; k++) sum += 1.0 - sfmDisp[at(k) + 1 + pc];
+            ref3Ring[idx * 12 + pc] = sum / win3;
+            // 比对4：EMA 递推一次（状态持续更新；改 α 只作用于之后的新采样）
+            if (!ref4EmaInited) { ref4EmaState[pc] = x; ref4EmaInited = true; }
+            else ref4EmaState[pc] = alpha * x + (1 - alpha) * ref4EmaState[pc];
+            ref4Ring[idx * 12 + pc] = ref4EmaState[pc];
+            // 比对5：过去 win5 个采样的指定分位数（线性插值，与原画图端算法一致）
+            for (let k = 0; k < win5; k++) qScratch[k] = 1.0 - sfmDisp[at(k) + 1 + pc];
+            qScratch.subarray(0, win5).sort();   // TypedArray 无参 sort = 数值升序
+            const rank = ref5Pct * (win5 - 1);
+            const lo = Math.floor(rank), hi = Math.ceil(rank), frac = rank - lo;
+            ref5Ring[idx * 12 + pc] = qScratch[lo] + (qScratch[hi] - qScratch[lo]) * frac;
         }
     }
     const pcSl = new Float64Array(12), pcSa = new Float64Array(12), pcNb = new Uint16Array(12); // 逐 pc 累计器
@@ -912,6 +961,8 @@
                 const o0 = chartWrite * SFM_CH;
                 for (let ch = 0; ch < SFM_CH; ch++) { sfmSl[o0 + ch] = 0; sfmSa[o0 + ch] = 0; sfmN[o0 + ch] = 0; }
             }
+            // 比对3/4/5 参考值同样在写入瞬间冻结：基于已冻结历史当场算好滑动平均/EMA/分位数
+            freezeSfmRefs(chartWrite);
             chartWrite = (chartWrite + 1) % CHART_N;
             chartAbsN++;
             chartCount = Math.min(chartCount + 1, CHART_N);
@@ -1826,7 +1877,6 @@
     const sfmRef3Canvas = document.getElementById('sfmRef3Canvas');
     const sfmRef3Ctx = sfmRef3Canvas.getContext('2d');
     const SR3_W = 376, SR3_H = 120;
-    let ref3WinSec = 5;
 
     function fitSfmRef3() {
         const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
@@ -1864,24 +1914,12 @@
 
         const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
         const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
-        const winSamples = Math.max(1, Math.round(ref3WinSec * CHART_HZ));
-
-        // 每个音级独立滑动平均（先取反后平均）
+        // 参考值已在采样写入时冻结（见 freezeSfmRefs）：这里只读环形缓存，
+        // 改 窗N(秒) 只影响之后新写入的点，历史曲线保持不变
         const refPerPc = new Float32Array(12 * chartCount);
         for (let pc = 0; pc < 12; pc++) {
-            const base = (1 + pc) * CHART_N;
             for (let p = 0; p < chartCount; p++) {
-                const idx = (chartWrite + p) % CHART_N;
-                let sum = 0, n = 0;
-                for (let k = 0; k < winSamples; k++) {
-                    const sidx = (idx - k + CHART_N) % CHART_N;
-                    const pp = (sidx - chartWrite + CHART_N) % CHART_N;
-                    if (pp < chartCount) {
-                        sum += 1.0 - sfmLines[base + pp];
-                        n++;
-                    }
-                }
-                refPerPc[pc * chartCount + p] = n > 0 ? sum / n : 0;
+                refPerPc[pc * chartCount + p] = ref3Ring[((chartWrite + p) % CHART_N) * 12 + pc];
             }
         }
 
@@ -1932,7 +1970,6 @@
     const sfmRef4Canvas = document.getElementById('sfmRef4Canvas');
     const sfmRef4Ctx = sfmRef4Canvas.getContext('2d');
     const SR4_W = 376, SR4_H = 120;
-    let ref4EmaAlpha = 0.2;
 
     function fitSfmRef4() {
         const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
@@ -1946,9 +1983,6 @@
 
     const ref4EmaEl = document.getElementById('ref4EmaAlpha');
     ref4EmaEl.addEventListener('change', () => { ref4EmaAlpha = Math.max(0.01, Math.min(1, parseFloat(ref4EmaEl.value) || 0.2)); });
-
-    const ref4EmaState = new Float32Array(12).fill(0);
-    let ref4EmaInited = false;
 
     function drawSfmRef4() {
         sfmRef4Ctx.clearRect(0, 0, SR4_W, SR4_H);
@@ -1974,19 +2008,13 @@
         const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
         const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
 
-        if (!ref4EmaInited) {
-            for (let pc = 0; pc < 12; pc++) ref4EmaState[pc] = 1.0 - sfmLines[(1 + pc) * CHART_N + 0];
-            ref4EmaInited = true;
-        }
+        // EMA 参考值已在采样写入时递推冻结（见 freezeSfmRefs）：这里只读环形缓存，
+        // 改 EMA α 只作用于之后的新采样，历史 EMA 保持不变
         const alpha = ref4EmaAlpha;
         const refArr = new Float32Array(chartCount * 12);
         for (let p = 0; p < chartCount; p++) {
-            for (let pc = 0; pc < 12; pc++) {
-                const cur = sfmLines[(1 + pc) * CHART_N + p];
-                const curMod = 1.0 - cur;
-                ref4EmaState[pc] = alpha * curMod + (1 - alpha) * ref4EmaState[pc];
-                refArr[p * 12 + pc] = ref4EmaState[pc];
-            }
+            const idx = (chartWrite + p) % CHART_N;
+            for (let pc = 0; pc < 12; pc++) refArr[p * 12 + pc] = ref4Ring[idx * 12 + pc];
         }
 
         for (let pc = 0; pc < 12; pc++) {
@@ -2036,8 +2064,6 @@
     const sfmRef5Canvas = document.getElementById('sfmRef5Canvas');
     const sfmRef5Ctx = sfmRef5Canvas.getContext('2d');
     const SR5_W = 376, SR5_H = 120;
-    let ref5WinSec = 5;
-    let ref5Pct = 0.5;
 
     function fitSfmRef5() {
         const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
@@ -2077,29 +2103,13 @@
 
         const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
         const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
-        const winSamples = Math.max(1, Math.round(ref5WinSec * CHART_HZ));
+        // 分位数参考值已在采样写入时冻结（见 freezeSfmRefs）：这里只读环形缓存，
+        // 改 窗N(秒)/分位 只影响之后新写入的点，历史曲线保持不变
         const pct = ref5Pct;
-
         const refPerPc = new Float32Array(12 * chartCount);
         for (let pc = 0; pc < 12; pc++) {
-            const base = (1 + pc) * CHART_N;
             for (let p = 0; p < chartCount; p++) {
-                const idx = (chartWrite + p) % CHART_N;
-                const vals = [];
-                for (let k = 0; k < winSamples; k++) {
-                    const sidx = (idx - k + CHART_N) % CHART_N;
-                    const pp = (sidx - chartWrite + CHART_N) % CHART_N;
-                    if (pp < chartCount) vals.push(1.0 - sfmLines[base + pp]);
-                }
-                if (vals.length === 0) {
-                    refPerPc[pc * chartCount + p] = 0;
-                } else {
-                    vals.sort((a, b) => a - b);
-                    const rank = pct * (vals.length - 1);
-                    const lo = Math.floor(rank), hi = Math.ceil(rank);
-                    const frac = rank - lo;
-                    refPerPc[pc * chartCount + p] = vals[lo] + (vals[hi] - vals[lo]) * frac;
-                }
+                refPerPc[pc * chartCount + p] = ref5Ring[((chartWrite + p) % CHART_N) * 12 + pc];
             }
         }
 
@@ -2714,10 +2724,13 @@
     let drawAccum = 0;
     function loop(timestamp) {
         if (!isRunning) {
-            // 停止状态，继续绘制静态（含新增差值图和比对2图）
+            // 停止状态，继续绘制静态（含新增差值图和比对2/3/4/5图）
             drawAll();
             drawSfmDelta();
             drawSfmRef2();
+            drawSfmRef3();
+            drawSfmRef4();
+            drawSfmRef5();
             animationId = requestAnimationFrame(loop);
             return;
         }
@@ -2742,6 +2755,9 @@
             drawSfmCurve(); // 十二音级平坦度曲线
             drawSfmDelta(); // 十二音级平坦度差值（相对参考基准）
             drawSfmRef2(); // 音级反相平坦度比对2（推荐统计量参考）
+            drawSfmRef3(); // 音级反相平坦度比对3（滑动平均）
+            drawSfmRef4(); // 音级反相平坦度比对4（EMA）
+            drawSfmRef5(); // 音级反相平坦度比对5（历史分位数）
         }
 
         animationId = requestAnimationFrame(loop);
