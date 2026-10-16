@@ -171,6 +171,7 @@
         #chartCanvas { display: block; width: 100%; height: 144px; background: #0a1022; border-radius: 8px; touch-action: none; }
         #totCanvas { display: block; width: 100%; height: 144px; background: #0a1022; border-radius: 8px; }
         #sfmPcCanvas { display: block; width: 100%; height: 90px; background: #0a1022; border-radius: 8px; }
+        #sfmRangeCanvas { display: block; width: 100%; height: 120px; background: #0a1022; border-radius: 8px; }
         #sfmCurveCanvas { display: block; width: 100%; height: 120px; background: #0a1022; border-radius: 8px; }
         #sfmDeltaCanvas { display: block; width: 100%; height: 120px; background: #0a1022; border-radius: 8px; }
         #sfmRef2Canvas { display: block; width: 100%; height: 120px; background: #0a1022; border-radius: 8px; }
@@ -281,6 +282,16 @@
             </span>
         </div>
         <canvas id="sfmPcCanvas" width="376" height="90"></canvas>
+    </div>
+    <div class="side-total" style="margin-top:12px;">
+        <div class="side-env-head">
+            <span>反平坦度曲线（极差）</span>
+            <span style="display:flex; align-items:center; gap:6px;">
+                <span class="gpVal" style="color:#c084ff; font-weight:400;">1-v · 重缩放 0~1 · 5s</span>
+                <span class="info-i" title="每音级一条 5s 走势线：先取反（1-v），再逐时刻重缩放——每个采样点用当时 12 音级的 min/max 拉伸到 0~1，12 条覆盖的丝带上下缘始终贴住图表上下边。该时刻极差≈0 时居中画 0.5。时间窗由左侧「窗」瓦片控制。">i</span>
+            </span>
+        </div>
+        <canvas id="sfmRangeCanvas" width="376" height="120"></canvas>
     </div>
     <div class="side-total" style="margin-top:12px;">
         <div class="side-env-head">
@@ -427,11 +438,11 @@
     // 系统缩放变化 / 跨屏拖动（dpr 变化）时重建位图并重绘
     if (window.matchMedia) {
         const mq = window.matchMedia(`(resolution: ${(window.devicePixelRatio || 1)}dppx)`);
-        const onDprChange = () => { fitCanvas(); fitChart(); fitTot(); fitSpf(); fitSfmCurve(); fitSfmDelta(); fitSfmRef2(); fitSfmRef3(); fitSfmRef4(); fitSfmRef5(); drawAll(); };
+        const onDprChange = () => { fitCanvas(); fitChart(); fitTot(); fitSpf(); fitSfmCurve(); fitSfmRange(); fitSfmDelta(); fitSfmRef2(); fitSfmRef3(); fitSfmRef4(); fitSfmRef5(); drawAll(); };
         if (mq.addEventListener) mq.addEventListener('change', onDprChange);
         else if (mq.addListener) mq.addListener(onDprChange); // 旧版 Safari
     }
-    window.addEventListener('resize', () => { fitCanvas(); fitChart(); fitTot(); fitSpf(); fitSfmCurve(); fitSfmDelta(); fitSfmRef2(); fitSfmRef3(); fitSfmRef4(); fitSfmRef5(); drawAll(); });
+    window.addEventListener('resize', () => { fitCanvas(); fitChart(); fitTot(); fitSpf(); fitSfmCurve(); fitSfmRange(); fitSfmDelta(); fitSfmRef2(); fitSfmRef3(); fitSfmRef4(); fitSfmRef5(); drawAll(); });
 
     // 12 列（十二音级）× 9 行（音区）grid：每格一个迷你极坐标盘
     // 列 = 十二平均律音级（C…B）横排；行 = 音区（A0 … C8）竖排
@@ -1613,6 +1624,73 @@
         }
     }
 
+    // ---------- 反平坦度曲线（极差·重缩放）：每音级一条 1-v 走势线 ----------
+    // 逐时刻重缩放：每个采样点用当时 12 音级的 min/max 拉伸到 0~1（每帧随可见 5s 窗口重算），
+    // 12 条覆盖的"丝带"上下缘在任何采样点都贴住图表上下边。
+    const sfmRangeCanvas = document.getElementById('sfmRangeCanvas');
+    const sfmRangeCtx = sfmRangeCanvas.getContext('2d');
+    const SRG_W = 376, SRG_H = 120;
+    function fitSfmRange() {
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+        const bw = Math.round(SRG_W * dpr), bh = Math.round(SRG_H * dpr);
+        if (sfmRangeCanvas.width !== bw || sfmRangeCanvas.height !== bh) {
+            sfmRangeCanvas.width = bw; sfmRangeCanvas.height = bh;
+        }
+        sfmRangeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    fitSfmRange();
+    // 重缩放：逐时刻用当时 12 音级的 min/max 拉伸（丝带上下缘始终贴边），结果预存 rgNorm，画线只读
+    const rgScratch = new Float32Array(12);           // 单个采样点的 12 音级暂存
+    const rgNorm = new Float32Array(12 * CHART_N);    // 归一结果（每帧覆写）
+    function drawSfmRange() {
+        sfmRangeCtx.clearRect(0, 0, SRG_W, SRG_H);
+        sfmRangeCtx.fillStyle = '#0a1022';
+        sfmRangeCtx.fillRect(0, 0, SRG_W, SRG_H);
+        const padL = 4, padR = 4, padT = 6, padB = 13;
+        const iw = SRG_W - padL - padR, ih = SRG_H - padT - padB;
+        // 网格：0.25 步进（归一后恒为 0~1）
+        sfmRangeCtx.font = '9px sans-serif';
+        sfmRangeCtx.textAlign = 'left';
+        for (let v = 0; v <= 1.001; v += 0.25) {
+            const y = Math.round(padT + ih * (1 - v)) + 0.5;
+            sfmRangeCtx.beginPath();
+            sfmRangeCtx.moveTo(padL, y); sfmRangeCtx.lineTo(SRG_W - padR, y);
+            sfmRangeCtx.strokeStyle = v === 1 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.07)';
+            sfmRangeCtx.lineWidth = 1; sfmRangeCtx.stroke();
+        }
+        // 1) 取反（1-v）后逐时刻重缩放：每个采样点用当时 12 音级的 min/max 拉伸到 0~1，
+        //    12 条覆盖的"丝带"上下缘在任何采样点都贴住图表上下边
+        const xOf = (p) => padL + iw * (p - (chartCount - CHART_N)) / (CHART_N - 1);
+        const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
+        for (let p = 0; p < chartCount; p++) {
+            let mn = Infinity, mx = -Infinity;
+            for (let pc = 0; pc < 12; pc++) {
+                const x = 1.0 - sfmLines[(1 + pc) * CHART_N + p];
+                rgScratch[pc] = x;
+                if (x < mn) mn = x;
+                if (x > mx) mx = x;
+            }
+            const range = mx - mn;
+            for (let pc = 0; pc < 12; pc++) {
+                // 极差≈0（该时刻各音级相同）→ 居中 0.5，避免贴边抖动
+                rgNorm[pc * chartCount + p] = range > 1e-9 ? (rgScratch[pc] - mn) / range : 0.5;
+            }
+        }
+        // 2) 十二条曲线（音级色），x 与总量图同一时间轴
+        for (let pc = 0; pc < 12; pc++) {
+            const c = SEMI_RGB[pc];
+            sfmRangeCtx.beginPath();
+            for (let p = 0; p < chartCount; p++) sfmRangeCtx.lineTo(xOf(p), yOf(rgNorm[pc * chartCount + p]));
+            sfmRangeCtx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},0.85)`;
+            sfmRangeCtx.lineWidth = 1;
+            sfmRangeCtx.stroke();
+            // 线尾音名小字，便于对应颜色
+            const lastP = chartCount - 1;
+            sfmRangeCtx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},0.95)`;
+            sfmRangeCtx.fillText(NOTE_NAMES[pc], Math.min(xOf(lastP) + 2, SRG_W - 14), yOf(rgNorm[pc * chartCount + lastP]) + 3);
+        }
+    }
+
     // ---------- 音级平坦度差值：每音级 SFM 相对于参考基准的 delta 时间线 ----------
     // 参考模式：max=12音级最高, mean=12音级平均, median=12音级中位
     const sfmDeltaCanvas = document.getElementById('sfmDeltaCanvas');
@@ -2753,6 +2831,7 @@
             drawTotal(); // 总量走势（按所选范围）
             drawSfmPc(); // 十二音级谱平坦度
             drawSfmCurve(); // 十二音级平坦度曲线
+            drawSfmRange(); // 反平坦度曲线（1-v 后全局极差归一）
             drawSfmDelta(); // 十二音级平坦度差值（相对参考基准）
             drawSfmRef2(); // 音级反相平坦度比对2（推荐统计量参考）
             drawSfmRef3(); // 音级反相平坦度比对3（滑动平均）
