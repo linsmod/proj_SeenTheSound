@@ -25,41 +25,50 @@
     .legend-row .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
     /* 图表矩阵单元格：高度写死 + 参数条移到画布下方并 margin-top:auto
        → 各格画布 y 坐标完全一致，横向逐行比对。宽度不写死，由 grid 列宽自适应 */
-    /* 主体左右分栏：左 grid（0 号输入 + N 张可编辑图），右编辑器。编辑器不进 grid，
-       grid 各格的固定高/对齐不变式不受它影响。
-       右栏头部（目标下拉 / 标题 / 说明）压在画布上方，右栏画布因此不再与 grid 各格同 y，
-       换来"正在编辑谁 + 改什么标题"与结果图同屏可见。
-       窄屏（手机等）放不下"grid 一列 + 编辑器"时，靠 flex-wrap 自动把编辑器换行到页面末尾，
-       不需要维护断点：换行阈值 = grid 基准 280 + 编辑器 372 + gap 10 + wrap padding 24 = 686px */
+    /* 主体三栏：左 = 文件树（我的图 / 模板），中 = grid 预览区，右 = 编辑器。
+       左树是导航 + 右键管理入口，中间的卡片才是"画布网格"，右栏只编辑当前选中那一格。
+       窄屏（手机等）放不下三栏时靠 flex-wrap 依次换行，不维护断点。 */
     .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 10px 12px 16px; }
-    /* grid 用 auto-fill 的 1fr 列：列宽全局一致，末行不会被拉伸成另一批宽度 → 跨行也能对齐。
-       minmax(280px,·) 让列数随可用宽度自适应。flex 基准取 280（= 一列的最小宽），
-       基准和超过容器就换行，实验台自动落到末尾。min-width:0 允许被压到内容宽以下 */
-    .grid { flex: 1 1 280px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
+    /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着 grid 一起长） */
+    .tree { flex: 0 0 216px; box-sizing: border-box; padding: 4px 4px 6px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; }
+    .tree .th { display: flex; align-items: center; gap: 6px; padding: 6px 6px 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: #8fa2c8; }
+    .tree .th .cnt { flex: none; font-weight: 400; color: #5a6c94; }
+    .tree .th .hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-weight: 400; color: #45557a; }
+    .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #bcc8e8; cursor: pointer; }
+    .tree .tnode:hover { background: #17223f; }
+    .tree .tnode.sel { background: rgba(74,224,255,0.14); box-shadow: inset 0 0 0 1px rgba(74,224,255,0.45); color: #cbeeff; }
+    .tree .tnode .to { flex: none; width: 15px; color: #4ae0ff; }
+    .tree .tnode .tn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree .tnode .tk { flex: none; font-size: 10px; color: #ffb347; }        /* ● 与出厂不同 */
+    .tree .tnode .tk.p { color: #4ae0ff; }                                   /* ✎ 有未保存草稿 */
+    /* 模板行：非用户创建，只能「从模板新建」出自己的副本，所以整行压暗一档以示只读 */
+    .tree .tnode.tpl .tn { color: #9fb0d6; }
+    .tree .tnode.tpl .to { color: #6d7fa6; }
+    .tree .empty { padding: 3px 6px 6px; font-size: 11px; color: #45557a; }
+    /* 中间：grid 预览区。用 auto-fill 的 1fr 列，列宽一致 → 跨行也能对齐 */
+    .mid { flex: 1 1 420px; min-width: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
     /* 卡片外壳：网格各格（.cell）与右栏编辑器（.lab）共用同一套外观 —— 背景/圆角/描边/纵向流。
        .lab 里 .etop/.erow/.dsc 是编辑头（选目标、改标题说明），画布是"这一格的最终结果"，
        再往下是工具条与逐级卡 —— 与一个 cell 的"标题 + 画布 + 底部一条参数带"同构，只是多了编辑控件。 */
     .cell, .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; }
     /* 高度从 210 加到 238：底部多一条播放器按钮行。各格仍然等高 → 画布 y 依旧对齐 */
     .cell { height: 238px; }
-    .lab { flex: 1 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
-    /* 吸附 + 栏内滚动只在并排时启用：换行到下方后 sticky 会把整块钉在视口顶、max-height 又逼出内滚动，
-       在手机上反而难用。阈值 686 与上面 flex 基准之和一致，两处数字要同步改 */
-    @media (min-width: 686px) {
-        .lab { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
+    .lab { flex: 0 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
+    /* 吸附 + 栏内滚动只在三栏并排时启用：阈值 ≈ 216 + 420 + 372 + 两个 gap + padding = 1064 */
+    @media (min-width: 1064px) {
+        .lab, .tree { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
     }
     /* 标题 / 副标题：cell 与编辑器共用 */
     .cell .hd { flex: none; display: flex; align-items: center; font-size: 14px; font-weight: 700; color: #bcc8e8; cursor: pointer; }
     /* 标题行三段分开：序号徽标 / 标题文本 / 已改标记。序号不进标题文本 ——
-       标题可改、还能「另存为新图」，序号必须由位置算，改名与增删格都不会打乱编号。
+       标题可改、还能「从模板新建」，序号必须由位置算，改名与增删格都不会打乱编号。
        .ttl 吃掉剩余宽度（flex:1 + min-width:0）：标题过长时自己截断，
-       后面的 ● ✎ ⋯ 始终被顶到这一行最右端。 */
+       后面的 ● ✎ 始终被顶到这一行最右端。 */
     .cell .hd .ord { flex: none; margin-right: 4px; color: #4ae0ff; }
     .cell .hd .ttl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cell .hd .mark { flex: none; margin-left: 4px; color: #ffb347; font-size: 10px; }
     .cell .hd .pmark { flex: none; margin-left: 4px; color: #4ae0ff; font-size: 11px; }   /* ✎ = 该格有未保存草稿 */
-    .cell .hd .mb { flex: none; margin-left: 4px; padding: 0 5px; background: #0e1630; border: 1px solid rgba(255,255,255,0.14); color: #8fa2c8; font-size: 12px; line-height: 1.25; cursor: pointer; border-radius: 5px; }
-    .cell .hd .mb:hover, .cell .hd .mb:focus-visible { color: #fff; background: #263a60; border-color: rgba(74,224,255,0.45); }
     .cell canvas.mx { cursor: pointer; }
     /* 这一格正在右栏被编辑且草稿已脏 → 锁住左格参数条：状态在右栏手里，左格再改就成两份了 */
     .cell .pbar.locked { opacity: 0.35; pointer-events: none; }
@@ -118,11 +127,14 @@
     .lab .idle { display: none; padding: 22px 12px; font-size: 12px; line-height: 1.8; color: #5a6c94; text-align: center; }
     .lab.idle .idle { display: block; }
     .lab.idle .erow, .lab.idle .dsc, .lab.idle .pipe, .lab.idle .mx, .lab.idle .ltools, .lab.idle .lcharts { display: none; }
-    /* 只读态（原始输入格）：不给保存、不给级联编排，标题/说明仍可选中复制。
+    /* 只读态（模板 / 原始输入格）：不给保存、不给级联编排，标题/说明仍可选中复制。
        编排按钮一并藏掉，是为了把"只读"这条约定钉死 —— 将来若出现带级的只读条目也不会漏出编辑入口。 */
     .lab.ro .edit-only, .lab.ro .lcard-hd .en, .lab.ro .lcard-hd .sel, .lab.ro .lcard-hd .sops { display: none; }
     .lab.ro input.ttl, .lab.ro textarea.dsc { opacity: 0.72; }
     .lab.ro .lcharts:empty::after { content: '（原始输入没有级联：什么都不做）'; }
+    /* 只读提示：告诉用户"这一条不能改，要改就从模板新建一份"，否则会以为界面坏了 */
+    .lab .rohint { display: none; flex: none; margin: 2px 0 4px; padding: 4px 6px; background: #17223f; border-left: 2px solid #4ae0ff; border-radius: 4px; font-size: 11px; line-height: 1.6; color: #9fb0d6; }
+    .lab.ro .rohint { display: block; }
     .lab .erow { flex: none; display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
     .lab .erow .ord { flex: none; color: #4ae0ff; font-size: 14px; font-weight: 700; }
     .lab input.ttl { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: #0a1022; color: #e8eefc; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 13px; font-weight: 700; padding: 2px 4px; }
@@ -153,22 +165,26 @@
 </div>
 <div class="legend-row" id="legend"></div>
 <div class="wrap">
-    <div class="grid" id="grid"></div>
+    <aside class="tree" id="tree"></aside>
+    <div class="mid">
+        <div class="grid" id="grid"></div>
+    </div>
     <div class="lab" id="lab">
         <div class="etop">
             <span class="dirty" id="labDirty"></span>
             <button class="xbtn" id="labClose" type="button" title="关闭当前编辑（未保存会先问，走 VSCode 关闭标签那套：保存 / 丢弃 / 取消）">✕</button>
         </div>
-        <div class="idle">左栏点一格即可编辑<br/>格子的 ⋯ 里有复制 / 删除</div>
+        <div class="idle">左栏点一行、或中间点一张卡片，即可编辑<br/>管理动作（从模板新建 / 复制 / 删除 / 恢复出厂）在左栏那行的右键菜单里</div>
         <div class="erow">
             <span class="ord" id="labOrd"></span>
             <input class="ttl" id="labTitle" type="text" maxlength="60" placeholder="标题"/>
         </div>
-        <textarea class="dsc" id="labDesc" rows="1" maxlength="400" placeholder="说明（鼠标悬停左侧格子时显示）"></textarea>
+        <textarea class="dsc" id="labDesc" rows="1" maxlength="400" placeholder="说明（鼠标悬停中间卡片时显示）"></textarea>
+        <div class="rohint" id="labRoHint"></div>
         <div class="pipe" id="labPipe"></div>
         <canvas class="mx" id="labCanvas"></canvas>
         <div class="ltools">
-            <button class="lbtn primary" id="labSave" type="button" title="把所有格子待写回的草稿一次性写回左格，并存到服务端 matrix-doc.json">💾 保存</button>
+            <button class="lbtn primary" id="labSave" type="button" title="把所有格子待写回的草稿一次性写回中间卡片，并存到服务端 matrix-doc.json">💾 保存</button>
             <button class="lbtn edit-only" id="labAdd" type="button" title="在链尾追加一级（上限 8 级，12 音级 × 250 点远超够用）">+ 加一级</button>
             <button class="lbtn edit-only" id="labClear" type="button" title="清空级联 = 不做任何变换（保存后该格将与 0 号输入同图）">清空</button>
         </div>
@@ -218,7 +234,7 @@
     }
     const SEMI_RGB = Array.from({ length: SFM_PC }, (_, i) => oklchRgb(SEMI_L, SEMI_C, i * 30));
     // ---------- 管道计算（纯函数区，可独立数值测试） ----------
-    // 管道：1-v（反相）→ 按序执行 ch.stages 的每一级 → 屏幕
+    // 管道：1-v（反相）→ 按序执行 ch.stages 的每一级 → OUTPUT
     // 变换注册表 OPS，两种 kind：
     //   scalar：逐音级独立映射 f(x,p)→x'（幂/log/tanh…）
     //   vector：拿整条 12 音级向量 f(a,p)→a（就地改写）。min/max、μ/σ、排秩这类必须跨音级看全貌的
@@ -302,9 +318,17 @@
     const cloneStage = (s) => ({ id: s.id, on: s.on, p: { ...s.p }, collapsed: s.collapsed });
     // 存档比对用的规范形式：p 的键排序，避免同一份数据仅因键序不同被误判成"改过"
     function sortObj(o) { const r = {}; for (const k of Object.keys(o).sort()) r[k] = o[k]; return r; }
+    // 内容（不含身份）：判"与出厂/模板是否同一份"只看这些。from 只是溯源标签，不能算进内容，
+    // 否则刚从模板新建的副本立刻就被判成"改过"（副本带 from、出厂快照不带）
+    function contentJson(e) {
+        return JSON.stringify({
+            title: e.title, desc: e.desc,
+            stages: e.stages.map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p), collapsed: !!s.collapsed })),
+        });
+    }
     function entryJson(e) {
         return JSON.stringify({
-            id: e.id, title: e.title, desc: e.desc,
+            id: e.id, title: e.title, desc: e.desc, from: e.from,
             stages: e.stages.map((s) => ({ id: s.id, on: s.on, p: sortObj(s.p), collapsed: !!s.collapsed })),
         });
     }
@@ -361,11 +385,14 @@
             if (typeof c.id !== 'string' || !c.id || seen.has(c.id)) continue;
             seen.add(c.id);
             const title = typeof c.title === 'string' ? c.title.trim().slice(0, 60) : '';
+            // from 只认模板 id：它决定「恢复出厂」回到哪一份出厂快照，指到不存在的地方就当没有
+            const from = typeof c.from === 'string' && TEMPLATE_IDS.has(c.from) ? c.from : undefined;
             charts.push({
                 id: c.id,
                 title: title || '未命名',
                 desc: typeof c.desc === 'string' ? c.desc.slice(0, 400) : '',
                 stages: (sanitizeStages(c.stages) || []).slice(0, MAX_STAGES),
+                from,
             });
         }
         if (!charts.length) return null;
@@ -473,7 +500,7 @@
     // 声明放在这里（网格构建之前）：renderCell 要用 draftDirty() 决定参数条锁不锁、✎ 角标显不显示
     const drafts = new Map();
     let DRAFT = null;             // 当前选中格那一份草稿的引用，省得逐级卡/输入框到处按 id 取
-    function cloneEntry(e) { return { id: e.id, title: e.title, desc: e.desc, stages: e.stages.map(cloneStage), readonly: !!e.readonly }; }
+    function cloneEntry(e) { return { id: e.id, title: e.title, desc: e.desc, from: e.from, stages: e.stages.map(cloneStage), readonly: !!e.readonly }; }
     function draftOf(id) {
         let r = drafts.get(id);
         if (!r) {
@@ -573,7 +600,7 @@
     // 管道摘要（图标题下方等宽小字，参数/顺序/启用状态改动即时刷新）
     // vector 级加花括号标出（整条链的跨音级断点），停用级用删除线标出（不参与执行）
     function pipeSummary(ch) {
-        if (!ch.stages.length) return '原始 SFM → 屏幕';   // 0 号输入：stages 为空 = 不做任何变换
+        if (!ch.stages.length) return '原始 SFM → OUTPUT';   // 0 号输入：stages 为空 = 不做任何变换
         const parts = [];
         for (const st of ch.stages) {
             const op = OPS[st.id];
@@ -582,7 +609,7 @@
             const wrapped = op.kind === 'vector' ? `{${txt}}` : `[${txt}]`;
             parts.push(st.on ? wrapped : `~~${txt}~~`);
         }
-        return parts.join(' → ') + ' → 屏幕';
+        return parts.join(' → ') + ' → OUTPUT';
     }
     // ---------- 数据源：与主面板相同的 SSE 流（/stream），逐音级 SFM 滑窗合成 ----------
     const statusEl = document.getElementById('status');
@@ -718,12 +745,21 @@
     const INPUT_DESC = '0 号输入：逐音级原始 SFM，未经反相也未经任何变换。只读（原始量没有可改字段）—— 反相 1-v 是可选算子，由各图/各级自己决定要不要。';
     const READONLY_ENTRY = { id: INPUT_ID, title: INPUT_TITLE, desc: INPUT_DESC, stages: [], readonly: true };
     function isReadonly(id) { return id === INPUT_ID; }
-    // 建一格：entry = DOC 里的一格（可编辑）或 READONLY_ENTRY（0 号输入，只读）
+    // ---------- 模板 vs「我的图」 ----------
+    // 模板 = 非用户创建的那批：内置 ①–⑧、实验台、0 号输入（数据源）。它们**只读**：
+    // 想改就「从模板新建」克隆一份出来，那份 id 形如 uN，进「我的图」，才可改可删。
+    // 判定走代码里的 id 白名单而不是存档里的标记：存档改不动白名单，而用户图永远拿不到 c3 这种 id
+    //（newChartId 只发 uN），所以"模板"这个身份伪造不了。
+    const TEMPLATE_IDS = new Set(CHART_DEFS.map((d) => d.id).concat([LAB_ID, INPUT_ID]));
+    function isTemplate(id) { return TEMPLATE_IDS.has(id); }
+    function isLocked(id) { return isTemplate(id); }    // 只读 = 模板（0 号输入也在白名单里）
+    // 建一格：entry = DOC 里的一格（模板或「我的图」）或 READONLY_ENTRY（0 号输入）
     // 顺序固定为 标题 → 管道摘要 → 画布 → 参数条（参数在画布下方，格子高度写死，各格画布 y 对齐）
+    // 卡片只负责"看"：预览 + 播放按钮。管理动作（从模板新建 / 复制 / 删除 / 恢复出厂）在左栏文件树的右键菜单里。
     function buildCell(entry, ord) {
         const cell = document.createElement('div');
         cell.className = 'cell';
-        const ro = !!entry.readonly;
+        const ro = isLocked(entry.id);
         // 标题行逐节点写（textContent）：title/desc 来自用户输入且会进 localStorage，
         // 走 innerHTML 会被引号/尖括号截断属性甚至塞进标签（旧代码用 innerHTML 是因为标题是可信常量）
         const hd = document.createElement('div');
@@ -731,22 +767,10 @@
         const ordEl = document.createElement('span'); ordEl.className = 'ord';
         const ttlEl = document.createElement('span'); ttlEl.className = 'ttl';
         const markEl = document.createElement('span'); markEl.className = 'mark';
-        markEl.textContent = '●'; markEl.title = '这一格已被改过（与内置出厂不同）';
+        markEl.textContent = '●'; markEl.title = '这一条已被改过（与出厂不同）';
         const pmarkEl = document.createElement('span'); pmarkEl.className = 'pmark';
-        pmarkEl.textContent = '✎'; pmarkEl.title = '这一格有未保存的草稿（点格子回来接着改）';
+        pmarkEl.textContent = '✎'; pmarkEl.title = '这一格有未保存的草稿（点它回来接着改）';
         hd.append(ordEl, ttlEl, markEl, pmarkEl);
-        // 标题行末尾的 ⋯：格级操作（复制 / 删除 / 恢复出厂）收在这里，跟标题同一行、被顶到最右端。
-        // 只读格（原始输入）没有 ⋯：不能复制出成品、不能删、也不需要恢复出厂。
-        let menuBtn = null;
-        if (entry && !ro) {
-            menuBtn = document.createElement('button');
-            menuBtn.type = 'button';
-            menuBtn.className = 'mb';
-            menuBtn.textContent = '⋯';
-            menuBtn.title = '本格操作：复制 / 删除';
-            menuBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openCellMenu(menuBtn, entry); });
-            hd.appendChild(menuBtn);
-        }
         const pipeEl = document.createElement('div'); pipeEl.className = 'pipe';
         const cv = document.createElement('canvas'); cv.className = 'mx';
         const pbar = document.createElement('div'); pbar.className = 'pbar';
@@ -765,18 +789,20 @@
         cell.append(hd, pipeEl, cv, foot);
         grid.appendChild(cell);
         const ch = {
-            entry, ord, ro, cell, ordEl, ttlEl, markEl, pmarkEl, menuBtn, pbar, pipeEl, playBtn,
+            entry, ord, ro, cell, ordEl, ttlEl, markEl, pmarkEl, pbar, pipeEl, playBtn,
             paused: false, shotPainted: false,
-            stages: entry.stages,                    // 与 DOC 里同一批 stage 对象：左格参数条改的就是成品
+            stages: entry.stages,                    // 与 DOC 里同一批 stage 对象：卡片参数条改的就是成品
             title: entry.title,
             out: new Float32Array(SFM_PC * CHART_N),
             w: 0, h: CH,
             cv, ctx: cv.getContext('2d'), isCell: true,
         };
-        cell.tabIndex = 0;                           // 每格都能点开（含只读的原始输入格）
+        cell.tabIndex = 0;                           // 每格都能点开（含只读的模板与输入格）
         const pick = () => selectChart(entry.id);
         cell.addEventListener('click', pick);
         cell.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
+        // 卡片上也能右键呼出同一套管理菜单（不必绕回左栏）：浮层锚在卡片上
+        cell.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openRowMenu(cell, entry.id); });
         charts.push(ch);
         ch.w = fitCanvas(cv, CH);
         renderCell(ch);
@@ -787,19 +813,21 @@
     // 控件与实际算子对不上。参数条回调只刷摘要与"未保存"，不重建（避免打断正在拖的滑杆）。
     function renderCell(ch) {
         const e = ch.entry;
-        ch.ordEl.textContent = ch.ord ? ordLabel(ch.ord) : '原';   // 只读的原始输入格没有圈号，给个"原"
+        ch.ordEl.textContent = ch.ord ? ordLabel(ch.ord) : '原';   // 0 号输入没有圈号，给个"原"
         ch.stages = e.stages;                        // 保存写回时 DOC.stages 被换成新数组，这里跟着重新指向
         ch.ttlEl.textContent = e.title;
         ch.title = e.title;
         ch.cell.title = e.desc || '';
         ch.markEl.style.display = isEdited(e) ? '' : 'none';
         ch.cell.classList.toggle('sel', e.id === selected);
-        // 这一格有未写回的草稿 → 锁参数条（同一个参数不能被两边各写一次；
-        // 解锁后参数在右栏的逐级卡里照样能调）。只读格不会有草稿，永远不锁。
+        // 锁参数条两种情形：① 模板/只读格 —— 本来就不许改，只能从模板新建副本；
+        // ② 这一格在右栏有未写回的草稿 —— 同一个参数不能两边各写一次（解锁后照样能在右栏逐级卡里调）。
         const pending = !ch.ro && draftDirty(e.id);
+        const lock = ch.ro || pending;
         ch.pmarkEl.style.display = pending ? '' : 'none';
-        ch.pbar.classList.toggle('locked', pending);
-        ch.pbar.title = pending ? '这一格有未保存的改动（✎），先保存或关掉它，再从左调皮参' : '';
+        ch.pbar.classList.toggle('locked', lock);
+        ch.pbar.title = ch.ro ? '模板（非用户创建）：只读。要改就在左栏这一行上右键「从模板新建」'
+            : pending ? '这一格有未保存的改动（✎），先保存或关掉它，再从左调皮参' : '';
         ch.pipeEl.textContent = pipeSummary(ch);
         buildParams(ch.pbar, chartParamSpecs(ch), () => {
             ch.pipeEl.textContent = pipeSummary(ch);
@@ -810,28 +838,113 @@
             refreshDirty();
         });
     }
-    // ---------- 格子右上角 ⋯ 菜单：格级操作 ----------
-    // 挂在 body 上：格子在 grid 里，浮层若作为格子的子元素会被行高/栅格布局挤压变形。
+    // ---------- 左栏文件树：我的图 + 模板 ----------
+    // 树的职责只有两件：导航（点一行 = 打开右栏编辑）+ 管理（右键呼出菜单）。
+    // 卡片只留预览与播放按钮 —— 管理动作集中在树里，卡片就能一直保持"干净的一张小图"。
+    const treeEl = document.getElementById('tree');
+    const treeNodes = new Map();         // id → { row, to, tn, tk }，给 syncTree 就地刷（不重建 DOM）
+    function isUserChart(id) { return !isTemplate(id); }
+    // 一条记录的"出厂来源"：模板就是它自己，「我的图」看 from（从哪个模板新建的）
+    function originId(e) { return isTemplate(e.id) ? e.id : (e.from || ''); }
+    function originPristine(e) { return PRISTINE.get(originId(e)) || null; }
+    // 「恢复出厂」只在"有出厂快照可回 + 现在确实不一样"时才有意义（比较只看内容，不看 from）
+    function canReset(id) {
+        const e = entryOf(id);
+        if (!e) return false;
+        const p = originPristine(e);
+        return !!p && contentJson(e) !== contentJson(p);
+    }
+    function treeRow(id) {
+        const row = document.createElement('div');
+        row.className = 'tnode' + (isTemplate(id) ? ' tpl' : '');
+        const to = document.createElement('span'); to.className = 'to';
+        const tn = document.createElement('span'); tn.className = 'tn';
+        const tk = document.createElement('span'); tk.className = 'tk';
+        row.append(to, tn, tk);
+        row.title = isTemplate(id)
+            ? '模板（非用户创建，只读）：左键打开看，右键「从模板新建」一份可编辑的副本'
+            : '我的图：左键打开编辑，右键「复制 / 删除 / 恢复出厂」';
+        row.tabIndex = 0;
+        row.addEventListener('click', () => { selectChart(id); scrollCardIntoView(id); });
+        row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectChart(id); } });
+        row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openRowMenu(row, id); });
+        treeNodes.set(id, { row, to, tn, tk });
+        return row;
+    }
+    function treeGroup(title, ids, hint) {
+        const box = document.createElement('div');
+        const th = document.createElement('div'); th.className = 'th';
+        const t = document.createElement('span'); t.textContent = title;
+        const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = String(ids.length);
+        const h = document.createElement('span'); h.className = 'hint'; h.textContent = hint;
+        th.append(t, cnt, h);
+        box.appendChild(th);
+        if (!ids.length) {
+            const em = document.createElement('div'); em.className = 'empty';
+            em.textContent = title === '我的图' ? '（空：在下面的模板行上右键「从模板新建」）' : '（无）';
+            box.appendChild(em);
+        }
+        for (const id of ids) box.appendChild(treeRow(id));
+        return box;
+    }
+    // 重建整棵树：只在结构变化（增删格 / 载入新文档）时调用；选中/标题/角标由 syncTree 就地刷
+    function buildTree() {
+        treeNodes.clear();
+        treeEl.innerHTML = '';
+        const user = [], tpl = [INPUT_ID];
+        for (const c of DOC.charts) (isTemplate(c.id) ? tpl : user).push(c.id);
+        treeEl.appendChild(treeGroup('模板', tpl, '只读 · 右键新建副本'));
+        treeEl.appendChild(treeGroup('我的图', user, '右键：复制/删除'));
+        syncTree();
+    }
+    function syncTree() {
+        for (const [id, n] of treeNodes) {
+            const e = entryOf(id);
+            if (!e) continue;
+            n.row.classList.toggle('sel', id === selected);
+            n.to.textContent = ordOf(id);
+            n.tn.textContent = e.title;
+            const pending = isUserChart(id) && draftDirty(id);
+            const edited = isEdited(e);
+            n.tk.textContent = (pending ? '✎' : '') + (edited ? '●' : '');
+            n.tk.className = 'tk' + (pending ? ' p' : '');
+        }
+    }
+    function scrollCardIntoView(id) {
+        const ch = cellOf(id);
+        if (ch && ch.cell.scrollIntoView) ch.cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+    // ---------- 右键菜单：模板与「我的图」两种菜单 ----------
+    // 挂在 body 上：行/卡片在布局流里，浮层若作为它们的子元素会被行高/栅格布局挤压变形。
     const menuEl = document.createElement('div');
     menuEl.className = 'cmenu';
     menuEl.hidden = true;
     document.body.appendChild(menuEl);
-    function closeCellMenu() { menuEl.hidden = true; }
-    function openCellMenu(anchor, entry) {
-        menuEl.textContent = '';
-        // 点格子本身就是"编辑"，所以菜单里不再重复这一项
-        const items = [
-            ['复制', '深克隆成左侧新增的一格，并立刻跳到该副本；本格不动', () => cloneAsNew(entry.id), ''],
-            ['删除', '从左栏移除这一格（保存后才落盘，刷新可恢复）', () => deleteChart(entry.id), 'danger'],
-        ];
-        if (PRISTINE.has(entry.id)) {
-            items.splice(1, 0, ['恢复出厂', '把这一格恢复成内置出厂状态（内置 ①–⑧ 才有）', () => resetToDefault(entry.id), '']);
+    function closeMenu() { menuEl.hidden = true; }
+    function menuItemsFor(id) {
+        const e = entryOf(id);
+        if (!e) return [];
+        if (isTemplate(id)) {
+            const items = [['从模板新建', '把这一条模板深克隆成一份可编辑的「我的图」，并跳到它', () => newFromTemplate(id), '']];
+            if (canReset(id)) items.push(['恢复出厂', '把这一条恢复成内置出厂状态（改过的模板才有这一项）', () => resetToDefault(id), '']);
+            return items;
         }
+        const items = [['复制', '深克隆成一份新的「我的图」，并跳到该副本；本份不动', () => cloneAsNew(id), '']];
+        if (canReset(id)) {
+            items.push(['恢复出厂', `把这一份恢复成模板 ${ordOf(e.from)} 的出厂状态`, () => resetToDefault(id), '']);
+        }
+        items.push(['删除', '从「我的图」里移除（按保存才落盘，刷新可恢复）', () => deleteChart(id), 'danger']);
+        return items;
+    }
+    function openRowMenu(anchor, id) {
+        const items = menuItemsFor(id);
+        if (!items.length) return;
+        menuEl.textContent = '';
         for (const [txt, tip, fn, cls] of items) {
             const b = document.createElement('button');
             b.type = 'button'; b.textContent = txt; b.title = tip;
             if (cls) b.className = cls;
-            b.addEventListener('click', () => { closeCellMenu(); fn(); });
+            b.addEventListener('click', () => { closeMenu(); fn(); });
             menuEl.appendChild(b);
         }
         menuEl.hidden = false;
@@ -840,18 +953,19 @@
         menuEl.style.left = Math.max(4, Math.min(vw - menuEl.offsetWidth - 4, r.right - menuEl.offsetWidth)) + 'px';
         menuEl.style.top = (r.bottom + 4 + menuEl.offsetHeight > vh ? Math.max(4, r.top - menuEl.offsetHeight - 4) : r.bottom + 4) + 'px';
     }
-    window.addEventListener('click', (ev) => { if (!menuEl.hidden && !menuEl.contains(ev.target)) closeCellMenu(); });
-    window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeCellMenu(); });
-    window.addEventListener('resize', closeCellMenu);
-    // 整块重建网格：复制 / 删除 / 导入会改 DOC 的格数与顺序，序号是按位置算的，必须重排。
+    window.addEventListener('click', (ev) => { if (!menuEl.hidden && !menuEl.contains(ev.target)) closeMenu(); });
+    window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenu(); });
+    window.addEventListener('resize', closeMenu);
+    // 整块重建网格 + 文件树：增删格 / 复制 / 载入新文档会改 DOC 的格数与顺序，序号按位置算，必须重排。
     // 只摘 cellCharts 里的格子，右栏输出图与逐级卡继续留在 charts 里（它们的 DOM 不在 grid 内）。
-    // 实验台（LAB_ID）也是普通一格：右栏现在是纯编辑器，"自由探索"既然是 DOC 里的一条，就该能被点到、能复制、能删。
+    // 实验台（LAB_ID）也是普通一格（模板）：右栏现在是纯编辑器，"自由探索"既然是 DOC 里的一条，就该能被点到、能新建副本。
     function buildGrid() {
         grid.innerHTML = '';
         for (const ch of cellCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
         cellCharts.length = 0;
-        cellCharts.push(buildCell(READONLY_ENTRY, 0));      // 0 号输入：只读，可点开看，没有 ⋯
+        cellCharts.push(buildCell(READONLY_ENTRY, 0));      // 0 号输入（模板组第一条）
         DOC.charts.forEach((e, i) => cellCharts.push(buildCell(e, i + 1)));
+        buildTree();
     }
     function cellOf(id) { return cellCharts.find((c) => c.entry && c.entry.id === id) || null; }
     // ---------- 播放控制：暂停 = 冻结画面（停止 compute+draw，画布保持最后一帧） ----------
@@ -997,22 +1111,22 @@
     const labDescEl = document.getElementById('labDesc');
     const labOrdEl = document.getElementById('labOrd');
     const labDirtyEl = document.getElementById('labDirty');
+    const labRoHintEl = document.getElementById('labRoHint');
     const labCloseEl = document.getElementById('labClose');
     const labSaveEl = document.getElementById('labSave');
     const dlg = document.getElementById('closeDlg');
     const dlgTitleEl = document.getElementById('dlgTitle');
     const dlgBodyEl = document.getElementById('dlgBody');
     function entryOf(id) { return DOC.charts.find((c) => c.id === id) || (id === INPUT_ID ? READONLY_ENTRY : null); }
-    function cur() { return entryOf(selected); }
     function ordOf(id) { return isReadonly(id) ? '原' : ordLabel(Math.max(0, DOC.charts.findIndex((c) => c.id === id)) + 1); }
     function archiveDirty() { return entryDocJson(DOC) !== lastSaved; }   // 成品侧：参数调参 / 增删格还没存进服务端
     function pendingIds() { const out = []; for (const id of drafts.keys()) if (draftDirty(id)) out.push(id); return out; }
     // 未保存提示按格归属：只报"当前这一格"的草稿状态。
     // 之前是一盏全局灯：改完 ② 再去点 ③，右边还挂着"未保存"，读起来像是 ③ 没保存 —— 其实脏的是 ②。
-    // 别的格的待写回状态各有各的位置：格子上是 ✎；右栏在空态时补一句"N 格待写回"当提醒。
-    // 成品侧（左格调参 / 增删格，内存里已生效但磁盘上没有）单独用"未落盘"区分开。
+    // 别的格的待写回状态各有各的位置：卡片上是 ✎、树上是 ✎；右栏在空态时补一句"N 格待写回"当提醒。
+    // 成品侧（卡片调参 / 增删格，内存里已生效但磁盘上没有）单独用"未落盘"区分开。
     function refreshDirty() {
-        const ro = isReadonly(selected);
+        const ro = !!selected && isLocked(selected);
         const mine = !!selected && !ro && draftDirty(selected);
         const others = pendingIds().filter((id) => id !== selected);
         const n = pendingIds().length;
@@ -1027,15 +1141,16 @@
             ? `另有 ${others.length} 格待写回：${others.map(ordOf).join(' ')}（点那些格子上带 ✎ 的格子继续处理）`
             : (!selected && n ? '点左侧格子上带 ✎ 的那格继续处理' : ''));
         labCloseEl.hidden = !selected;        // 空态没有"正在编辑的东西"可关
-        labSaveEl.hidden = ro;               // 只读格没有草稿可写回，也就不给保存
-        for (const ch of cellCharts) {       // 各格 ✎ 角标跟随草稿状态（在右栏改草稿时格子没重渲染过）
+        labSaveEl.hidden = ro;               // 模板/只读格没有草稿可写回，也就不给保存
+        for (const ch of cellCharts) {       // 各格 ✎ 角标跟随草稿状态（在右栏改草稿时卡片没重渲染过）
             if (ch.entry) ch.pmarkEl.style.display = !ch.ro && draftDirty(ch.entry.id) ? '' : 'none';
         }
+        syncTree();                          // 树上的选中高亮 / 标题 / ✎● 也跟着刷（它不随 buildGrid 重建）
     }
     // 草稿 → 输入框。正在输入的那一格跳过，避免打字时被回写打断
     function syncEditorInputs() {
         if (!DRAFT) return;
-        const ro = !!DRAFT.readonly;          // 只读格：文本仍可选中复制，但改不了
+        const ro = isLocked(DRAFT.id);        // 模板/只读格：文本仍可选中复制，但改不了
         labOrdEl.textContent = ordOf(DRAFT.id);
         labTitleEl.readOnly = ro;
         labDescEl.readOnly = ro;
@@ -1083,7 +1198,7 @@
         if (commit) {
             for (const [id, r] of drafts) {
                 const e = entryOf(id);
-                if (!e || e.readonly) continue;               // 格子被删了 / 只读格没有草稿可写回
+                if (!e || isLocked(id)) continue;              // 格子被删了 / 模板只读，没有草稿可写回
                 e.title = r.d.title.trim().slice(0, 60) || '未命名';
                 e.desc = r.d.desc.slice(0, 400);
                 e.stages = r.d.stages.slice(0, MAX_STAGES).map(cloneStage);
@@ -1100,12 +1215,14 @@
         lastSaved = ok ? entryDocJson(DOC) : prev;         // 失败就把基线退回去，状态位重新亮起来
         refreshDirty();
     }
-    // 恢复出厂（成品侧操作，立即生效）：只有内置 8 图有出厂快照；自建的格子没这一项。
-    // 这一格的草稿一起丢掉：它本来就是"改这一格"，改成出厂后没什么可保留的
+    // 恢复出厂（成品侧操作，立即生效）：回到"出厂来源"那一份快照 ——
+    //   模板 → 它自己的内置出厂状态（只有内置 ①–⑧ 有快照，实验台/输入没有）
+    //   「我的图」 → 它 from 指向的那个模板（从模板新建时记下的）
+    // 这一格的草稿一起丢掉：它本来就是"改这一格"，改回出厂后没什么可保留的
     function resetToDefault(id) {
-        const p = PRISTINE.get(id);
         const e = entryOf(id);
-        if (!p || !e) return;
+        const p = e && originPristine(e);
+        if (!e || !p) return;
         e.title = p.title; e.desc = p.desc;
         e.stages = p.stages.map(cloneStage);
         drafts.delete(id);
@@ -1115,16 +1232,38 @@
         syncEditorInputs(); labSync(true); refreshDirty();
     }
     function newChartId() { let i = 1; while (DOC.charts.some((c) => c.id === 'u' + i)) i++; return 'u' + i; }
-    // 复制：把来源深克隆一份立刻变成成品格（左侧多一格），并跳到该副本接着编辑。
-    // srcId 缺省 = 用当前草稿（"把右栏这条链固化成一张正式图"）；给了 id = 克隆那一格的成品。
-    // 来源那一格不动，它的草稿照旧留着等保存。
+    // 新建一份「我的图」：套模板内容（可编辑），from 记下来源模板 → 以后能「恢复出厂」回那一天。
+    // 标题同名就加"副本"，免得树里两行一模一样的字。
+    function newFromTemplate(tplId) {
+        const t = entryOf(tplId);
+        if (!t || !isTemplate(tplId)) return;
+        const dup = DOC.charts.some((c) => !isTemplate(c.id) && c.title === t.title);
+        addUserChart({
+            title: t.title + (dup ? ' 副本' : ''),
+            desc: t.desc,
+            stages: t.stages,
+            from: PRISTINE.has(tplId) ? tplId : undefined,   // 有出厂快照才记来源（实验台/输入没有 → 不记）
+        });
+    }
+    // 复制：把来源深克隆一份成新的「我的图」，并跳到该副本接着编辑。来源那一份不动。
+    // srcId 缺省 = 用当前草稿（"把右栏这条链固化成一张图"）。
     function cloneAsNew(srcId) {
         const src = srcId ? entryOf(srcId) : DRAFT;
         if (!src) return;
-        const e = { id: newChartId(), title: src.title.replace(/ 副本( \d+)?$/, '') + ' 副本', desc: src.desc, stages: src.stages.map(cloneStage) };
+        addUserChart({
+            title: src.title.replace(/ 副本( \d+)?$/, '') + ' 副本',
+            desc: src.desc,
+            stages: src.stages,
+            from: src.from || (PRISTINE.has(src.id) ? src.id : undefined),
+        });
+    }
+    // 落一份新的用户图（插在实验台之前 → 树里"我的图"按新建顺序排）：深克隆，与来源没有任何共享引用
+    function addUserChart(spec) {
+        const e = { id: newChartId(), title: spec.title, desc: spec.desc, stages: spec.stages.map(cloneStage) };
+        if (spec.from) e.from = spec.from;
         const at = DOC.charts.findIndex((c) => c.id === LAB_ID);
-        DOC.charts.splice(at < 0 ? DOC.charts.length : at, 0, e);   // 插在实验台之前 → 左侧新增一格、其后各格序号顺延
-        selectChart(e.id);                          // 切到新格：它与克隆源没有任何共享引用，草稿也是新的
+        DOC.charts.splice(at < 0 ? DOC.charts.length : at, 0, e);
+        selectChart(e.id);
         buildGrid(); labSync(true); refreshDirty();
     }
     // 删除（成品侧操作，由格子的 ⋯ 菜单触发）：从 DOC 摘掉，它自己的草稿跟着一起消失，
@@ -1301,7 +1440,12 @@
     // 唯一的编辑收口：空态切换 + 刷管道摘要 + 刷"未保存" + 重建或只刷标签
     function labSync(rebuild) {
         labEl.classList.toggle('idle', !DRAFT);
-        labEl.classList.toggle('ro', !!(DRAFT && DRAFT.readonly));   // 只读态：不给保存、不给级联编排
+        labEl.classList.toggle('ro', !!(DRAFT && isLocked(DRAFT.id)));   // 只读态：模板/输入格 —— 不给保存、不给级联编排
+        if (DRAFT && isLocked(DRAFT.id)) {
+            labRoHintEl.textContent = isReadonly(DRAFT.id)
+                ? '0 号输入：原始 SFM，只读（原始量本身没有可改字段）。反相 1-v 是各图自己挑的可选算子。'
+                : '模板（非用户创建）：只读。要改成你自己的图 → 在左栏这一行上右键「从模板新建」一份副本。';
+        }
         labPipeEl.textContent = DRAFT ? pipeSummary({ stages: DRAFT.stages }) : '';
         labOut.hidden = !DRAFT;               // 空态时画布不参与绘制（display:none 画了也白画）
         refreshDirty();
@@ -1311,18 +1455,18 @@
 
     // ---- 工具条接线（全部写草稿；左格要等「保存」才动） ----
     labTitleEl.addEventListener('input', () => {
-        if (!DRAFT || DRAFT.readonly) return;          // 只读格：输入框本就不可编辑，这里再挡一次（防粘贴/程序化赋值）
+        if (!DRAFT || isLocked(DRAFT.id)) return;      // 模板/只读格：输入框本就不可编辑，这里再挡一次（防粘贴/程序化赋值）
         DRAFT.title = labTitleEl.value.slice(0, 60);
         refreshDirty();                       // 左格标题不动 —— 保存时才写回
     });
     labDescEl.addEventListener('input', () => {
-        if (!DRAFT || DRAFT.readonly) return;
+        if (!DRAFT || isLocked(DRAFT.id)) return;
         DRAFT.desc = labDescEl.value.slice(0, 400);
         refreshDirty();
     });
     document.getElementById('labSave').addEventListener('click', saveDoc);
     document.getElementById('labAdd').addEventListener('click', () => {
-        if (!DRAFT || DRAFT.readonly) return;
+        if (!DRAFT || isLocked(DRAFT.id)) return;
         const S = DRAFT.stages;
         if (S.length >= MAX_STAGES) return;               // 12 音级 × 250 点，8 级已远超需要
         const pick = S.length ? S[S.length - 1].id : 'pow';
@@ -1330,7 +1474,7 @@
         S.push({ id: pick, on: true, p: {}, collapsed: S.length !== 0 });
         labSync(true);
     });
-    document.getElementById('labClear').addEventListener('click', () => { if (DRAFT && !DRAFT.readonly) { DRAFT.stages.length = 0; labSync(true); } });
+    document.getElementById('labClear').addEventListener('click', () => { if (DRAFT && !isLocked(DRAFT.id)) { DRAFT.stages.length = 0; labSync(true); } });
     // 关闭：干净就直接关，脏的先弹 dialog（原生 dialog 自带 Esc = 取消、点遮罩不关）
     labCloseEl.addEventListener('click', closeEditor);
     // 全局播放控制
