@@ -545,7 +545,7 @@ def index():
 
 @app.route("/matrix")
 def matrix():
-    """参数化矩阵页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
+    """Sound DSP页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
     return send_from_directory(HERE, "matrix.html")
 
 
@@ -556,7 +556,7 @@ def stream():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-# ---- 参数化矩阵页的文档存储：一张 JSON 落在项目目录里 ----
+# ---- Sound DSP页的文档存储：一张 JSON 落在项目目录里 ----
 # 左栏 = 带预览的文件列表，右栏 = 编辑器标签页；保存/读取都走后端，
 # 存档跟着项目走（换浏览器、清缓存都不丢），也方便直接用编辑器/git 看 diff。
 # 落盘用"先写临时文件再改名"的原子替换：写到一半断电不会留下半个坏 JSON。

@@ -58,7 +58,7 @@ python server.py
 | 路由 | 说明 |
 | --- | --- |
 | `GET /` | 返回 `index.html` |
-| `GET /matrix` | 返回 `matrix.html`（参数化矩阵页：管道位置 × 变换函数 的图表矩阵，数据源同 `/stream`） |
+| `GET /matrix` | 返回 `matrix.html`（Sound DSP页：管道位置 × 变换函数 的图表矩阵，数据源同 `/stream`） |
 | `GET /stream` | SSE 频谱推流（60fps）：`s` 字节频谱、`gate` 门控矩阵、`freqs`/`bpo`（CQT）或 `binHz`（FFT）、`fps`/`rfps`/`err` |
 | `GET /set_smoothing?v=0.6` | EMA 平滑系数（0~0.95） |
 | `GET /set_a4?v=440` | 音准参考 A4（400~480），CQT 栅格与门控映射随之重建 |

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>参数化矩阵 · 管道位置 × 变换函数</title>
+<title>Sound DSP</title>
 <style>
     body { margin: 0; background: #070c1a; color: #bcc8e8; font-family: 'Segoe UI', sans-serif; }
     .topbar {
@@ -23,17 +23,20 @@
     /* 全局图例：12 音级配色只画一次，各图不再逐线渲染音名（否则 8×12 个小字互相压叠） */
     .legend-row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; padding: 6px 12px; background: #0b1226; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; color: #8fa2c8; }
     .legend-row .sw { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
-    /* 图表矩阵单元格：高度写死 + 参数条移到画布下方并 margin-top:auto
+    /* 图表ListView单元格：高度写死 + 参数条移到画布下方并 margin-top:auto
        → 各格画布 y 坐标完全一致，横向逐行比对。宽度不写死，由 grid 列宽自适应 */
-    /* 主体三栏：左 = 文件树（templates/ + 我的图），中 = 可换视图的面板（矩阵 / 模板列表 / 单文件链路），右 = 编辑器。
+    /* 主体三栏：左 = 文件树（templates/ + 我的图），中 = 可换视图的面板（ListView / 模板列表 / 单文件链路），右 = 编辑器。
        左树是导航 + 右键管理入口；中间默认放"画布网格"，也可以 open() 切成模板列表或某条链路的详情。
        窄屏（手机等）放不下三栏时靠 flex-wrap 依次换行，不维护断点。 */
     .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 10px 12px 16px; }
     /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着 grid 一起长） */
     .tree { flex: 0 0 216px; box-sizing: border-box; padding: 4px 4px 6px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; }
-    .tree .th { display: flex; align-items: center; gap: 6px; padding: 6px 6px 3px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: #8fa2c8; }
-    .tree .th .cnt { flex: none; font-weight: 400; color: #5a6c94; }
-    .tree .th .hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-weight: 400; color: #45557a; }
+    /* 树 = 两个目录的条目流，没有组标题：目录名本身就是分组，两目录之间只留一点间距 */
+    .tree > div + div { margin-top: 8px; }
+    /* 目录行可展开/收起（VSCode 那套）：三角单独可点，收起时该目录下的文件行整组隐藏 */
+    .tree .tnode .caret { flex: none; width: 13px; text-align: center; color: #8fa2c8; font-size: 10px; line-height: 1; cursor: pointer; user-select: none; }
+    .tree .tnode .caret:hover { color: #fff; }
+    .tree .grp.collapsed .tnode.file, .tree .grp.collapsed .empty { display: none; }
     .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #bcc8e8; cursor: pointer; }
     .tree .tnode:hover { background: #17223f; }
     .tree .tnode.sel { background: rgba(74,224,255,0.14); box-shadow: inset 0 0 0 1px rgba(74,224,255,0.45); color: #cbeeff; }
@@ -193,7 +196,7 @@
 </head>
 <body>
 <div class="topbar">
-    <span class="t">参数化矩阵 · 管道位置 × 变换函数</span>
+    <span class="t">Sound DSP · 管道位置 × 变换函数</span>
     <span class="pbar" id="globalBar"></span>
     <span class="gctl">
         <button id="gPlay" type="button" title="全局播放 / 暂停（暂停时每格各存一张快照到存档）">⏸ 全部暂停</button>
@@ -329,7 +332,7 @@
     };
     // 一级工厂：id + 启用位；参数默认值由 buildParams 按 spec 填进 p
     const stage = (id) => ({ id, on: true, p: {} });
-    // 图表矩阵定义：8 条内置级联，标题写"为什么选它"（想看清什么特征），
+    // 图表ListView定义：8 条内置级联，标题写"为什么选它"（想看清什么特征），
     // 机制（哪一级、什么算子、什么顺序）由下方 .pipe 摘要实时显示，悬停格子显示 desc。
     // id 是稳定身份（存档 key、另存为/删除/选中都靠它）——标题可改，所以绝不能拿标题当 key。
     // 标题里不写 ①…⑳：序号由格子位置算出来（见 ordLabel），改名和增删格都不会打乱编号。
@@ -402,7 +405,7 @@
     function dirOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? '' : file.slice(0, i + 1); }
     function stemOf(file) { const i = file.lastIndexOf('/'); const n = i < 0 ? file : file.slice(i + 1); return n.replace(/\.json$/, ''); }
     function isDspFile(file) { return dirOf(file) === DIR_DSP; }
-    function emptyView() { return { paused: [], shots: {}, openedTabs: [] }; }
+    function emptyView() { return { paused: [], shots: {}, openedTabs: [], collapsed: [] }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
@@ -410,6 +413,10 @@
         const known = (k) => set.has(k) || isFileKey(k);
         if (Array.isArray(raw.paused)) {
             v.paused = raw.paused.filter(known).slice(0, 64);
+        }
+        // 收起的目录：只认这两个目录（目录是固定的，不跟着文件走）
+        if (Array.isArray(raw.collapsed)) {
+            v.collapsed = raw.collapsed.filter((d) => d === DIR_TPL || d === DIR_DSP);
         }
         if (Array.isArray(raw.openedTabs)) {
             const seen = new Set();
@@ -751,7 +758,7 @@
         };
         es.onerror = () => { isRunning = false; statusEl.textContent = '⚠️ 断开，重连中…'; };
     }
-    // ---------- 图表矩阵：构建 DOM + 绘制 ----------
+    // ---------- 图表ListView：构建 DOM + 绘制 ----------
     // 画布尺寸不写死：CSS 侧由 grid 列宽自适应，这里实测每块画布的 CSS 宽当逻辑宽，
     // 位图 = 实测宽 × dpr → CSS 尺寸与位图永远 1:1，任何宽度下文字都不发虚。
     const CH = 132, LAB_C_H = 112;   // 网格各格 / 右栏输出图 / 右栏逐级图各自的画布高
@@ -893,9 +900,9 @@
     // 两组条目：
     //   templates/  = 磁盘上的模板文件（目录行 → 列表视图，文件行 → 预览视图；右键「从模板新建」）
     //   我的图       = DOC 里用户自己的图（左键 → 打开右栏编辑，右键 复制 / 恢复出厂 / 删除）
-    // 内置 ①–⑧ / 实验台 / 0 号输入不再单独成组：它们都在矩阵里有卡片，卡片点得到、右键也有同一套菜单。
+    // 内置 ①–⑧ / 实验台 / 0 号输入不再单独成组：它们都在ListView里有卡片，卡片点得到、右键也有同一套菜单。
     const treeEl = document.getElementById('tree');
-    // 树里每一行都是一个磁盘文件（目录行 / 文件行），不再按 DOC 的条目列 —— DOC 里的格子在矩阵里有卡片。
+    // 树里每一行都是一个磁盘文件（目录行 / 文件行），不再按 DOC 的条目列 —— DOC 里的格子在ListView里有卡片。
     // 「恢复出厂」只对内置模板有意义（比较内置出厂快照），我的图从创建起就是独立一条，不记来源。
     function originPristine(e) { return PRISTINE.get(e.id) || null; }
     function canReset(id) {
@@ -906,18 +913,20 @@
     }
     // 重建整棵树：只在结构变化（增删条目 / 载入新文档）时调用；选中态与标题由 syncTreeFiles 就地刷。
     function buildTree() {
+        dirGroups.clear();
         treeEl.innerHTML = '';
         treeEl.appendChild(treeGroupTplFiles());      // templates/：只读预设
         treeEl.appendChild(treeGroupDspFiles());      // content/My dsps/：我的图（可写）
+        applyDirCollapse();                           // 重建后把收起状态贴回去
         syncTreeFiles();
     }
 
     // ---------- 中心面板路由：open({ file, panel, viewer }) ----------
-    // 中间区域不再是"永远是矩阵"，它是一块可换视图的面板，装什么由 open() 决定：
+    // 中间区域不再是"永远是ListView"，它是一块可换视图的面板，装什么由 open() 决定：
     //   open({ file: 'templates/inv+zscore.json' })       → viewer=dspview     单个文件的链路视图
     //   open({ file: 'content/My dsps/u1.json' })         → viewer=dspview     同上（我的图那条）
     //   open({ file: 'templates/' | 'content/My dsps/' }) → viewer=dsplistview  某目录的列表视图
-    //   open({ file: '' })                                → viewer=grid        默认：整张图表矩阵
+    //   open({ file: '' })                                → viewer=grid        默认：整张图表ListView
     // viewer 可显式传（校验白名单）；不传就按 file 形态推：以 / 结尾 = 目录 → 列表，否则 = 文件 → 单视图。
     // panel 目前只认 'center'（左栏是树、右栏是编辑器，都不走这套路由），传别的直接忽略。
     const VIEWS = ['grid', 'dsplistview', 'dspview'];
@@ -961,7 +970,7 @@
         for (const ch of viewCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
         viewCharts.length = 0;
     }
-    // 矩阵视图进出：隐藏时把格子标成 hidden（主循环跳过，画布 display:none 算不出宽度），
+    // ListView视图进出：隐藏时把格子标成 hidden（主循环跳过，画布 display:none 算不出宽度），
     // 回来时逐块重量（隐藏期间宽度是 0，不重量会拿到 80 的最小宽画一帧变形图）
     function setGridVisible(on) {
         grid.hidden = !on;
@@ -972,7 +981,7 @@
             if (ch.paused) paintShot(ch);          // 暂停的格子画的是存档快照，重建位图后要补回来
         }
     }
-    // 面包屑：矩阵 › 目录 › 某文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
+    // 面包屑：ListView › 目录 › 某文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
     function renderCrumb() {
         crumbEl.textContent = '';
         const seg = (txt, file, now, title) => {
@@ -985,7 +994,7 @@
             return b;
         };
         const sp = () => { const s = document.createElement('span'); s.className = 'sp'; s.textContent = '›'; crumbEl.appendChild(s); };
-        seg('矩阵', '', OPEN.viewer === 'grid', '整张图表矩阵（默认视图）');
+        seg('ListView', '', OPEN.viewer === 'grid', '整张图表ListView（默认视图）');
         if (OPEN.viewer === 'grid') {
             seg('📁 templates/', DIR_TPL, false, '打开模板目录的列表视图');
             seg('📁 My dsps/', DIR_DSP, false, '打开我的图的列表视图');
@@ -996,7 +1005,7 @@
         seg(dir, dir, OPEN.viewer === 'dsplistview', dir + ' 的列表视图');
         if (OPEN.viewer === 'dspview') { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
     }
-    // 文件条目的"底部一条"= 参数条 + 播放按钮（与矩阵格子完全同构：画面在上、控件在下）。
+    // 文件条目的"底部一条"= 参数条 + 播放按钮（与ListView格子完全同构：画面在上、控件在下）。
     // 参数改的是内存里这一条链：模板是只读文件（要固化就「从模板新建」）；
     // 我的图直接改到 DOC 那一格上（文件就是它自己的存档），按「保存」才落盘。
     function buildFileFoot(host, t, ch) {
@@ -1124,13 +1133,13 @@
             mk('从模板新建', '按当前这份（含你调过的参数）克隆一份可编辑的「我的图」', () => newFromStagesFile(t), 'primary');
         }
         mk('← 列表', '回到 ' + dir + ' 的列表视图', () => open({ file: dir }));
-        mk('✕ 回到矩阵', '关掉视图，回到整张图表矩阵', () => open({ file: '' }));
+        mk('✕ 回到ListView', '关掉视图，回到整张图表ListView', () => open({ file: '' }));
         const ch = {
             file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
             cv, ctx: cv.getContext('2d'), pipeEl: pp, card: oneEl, isView: true,
         };
         oneEl.append(nf, vh, vd, pp, cv);
-        buildFileFoot(oneEl, t, ch);      // 参数条 + 播放/还原：与列表卡片、矩阵格子同一套
+        buildFileFoot(oneEl, t, ch);      // 参数条 + 播放/还原：与列表卡片、ListView格子同一套
         oneEl.append(stbox, tools);
         ch.w = fitCanvas(cv, ONE_C_H);
         bindViewPause(ch);
@@ -1170,7 +1179,7 @@
     }
     async function loadTemplates() { await loadDir('/api/templates', TPLS); }
     async function loadDsps() { await loadDir('/api/dsps', DSPS); }
-    // 我的图以文件为准：把 content/My dsps/ 里的条目并进 DOC（右栏编辑器、矩阵格子照旧按 id 找得到），
+    // 我的图以文件为准：把 content/My dsps/ 里的条目并进 DOC（右栏编辑器、ListView格子照旧按 id 找得到），
     // 文件里没有的那一格 = 已经在别处删掉了 → 从 DOC 摘掉。
     function mergeDspsIntoDoc() {
         const keep = new Set(DSPS.map((it) => stemOf(it.file)));
@@ -1243,32 +1252,69 @@
         }
     }
     // ---------- 树里的两个目录：目录行 → dsplistview，文件行 → dspview ----------
-    function treeFileRow(file, label, cls) {
+    // 目录行做得像 VSCode 的文件夹：一个可点的三角 + 目录名（不带尾巴的斜杠，完整路径在 tooltip 里），
+    // 三角只管展开/收起，点行本身还是"打开这个目录的列表视图"（顺手把它展开）。
+    const dirGroups = new Map();         // dir → { box, caret }，展开/收起就地刷，不重建整棵树
+    function dirLabel(dir) {
+        const s = dir.replace(/\/+$/, '');
+        const i = s.lastIndexOf('/');
+        return i < 0 ? s : s.slice(i + 1);
+    }
+    function isDirCollapsed(dir) {
+        const c = DOC.view && DOC.view.collapsed;
+        return !!c && c.indexOf(dir) >= 0;
+    }
+    function toggleDirCollapsed(dir) {
+        const clean = !archiveDirty();   // 先取：改完 view 就取不到了
+        const v = viewOf();
+        if (!Array.isArray(v.collapsed)) v.collapsed = [];
+        const i = v.collapsed.indexOf(dir);
+        if (i >= 0) v.collapsed.splice(i, 1); else v.collapsed.push(dir);
+        applyDirCollapse();
+        viewAutoSave(clean);             // 收起状态也进存档（与暂停名单同一条路）
+    }
+    function applyDirCollapse() {
+        for (const [dir, g] of dirGroups) {
+            const on = isDirCollapsed(dir);
+            g.box.classList.toggle('collapsed', on);
+            g.caret.textContent = on ? '▸' : '▾';
+            g.caret.title = on ? `展开 ${dir}` : `收起 ${dir}`;
+        }
+    }
+    function treeFileRow(file, label, cls, box) {
         const row = document.createElement('div');
         row.className = 'tnode ' + cls;
-        const to = document.createElement('span'); to.className = 'to'; to.textContent = cls === 'dir' ? '📁' : '📄';
+        const isDir = cls === 'dir';
+        if (isDir) {
+            const caret = document.createElement('span');
+            caret.className = 'caret';
+            caret.textContent = '▾';
+            caret.addEventListener('click', (ev) => { ev.stopPropagation(); toggleDirCollapsed(file); });
+            row.appendChild(caret);
+            if (box) dirGroups.set(file, { box, caret });
+        }
+        const to = document.createElement('span'); to.className = 'to'; to.textContent = isDir ? '📁' : '📄';
         const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = label;
         row.append(to, tn);
         row.tabIndex = 0;
-        row.title = cls === 'dir'
-            ? '目录：打开 ' + file + ' 的列表视图（dsplistview）'
+        row.title = isDir
+            ? file + '\n打开这个目录的列表视图（dsplistview）；点三角只展开/收起'
             : file + '：打开这一条的链路视图（dspview）';
-        row.addEventListener('click', () => open({ file }));
+        row.addEventListener('click', () => {
+            if (isDir && isDirCollapsed(file)) toggleDirCollapsed(file);   // 打开了就顺手展开
+            open({ file });
+        });
         row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open({ file }); } });
         row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openFileMenu(row, file); });
         treeFileNodes.set(file, { row, tn });
         return row;
     }
-    // 一组 = 一个目录：标题 + 目录行 + 目录下每个文件一行
-    function treeGroupFiles(title, dir, hint, items, emptyText, labelOf) {
+    // 一组 = 一个目录：目录行 + 目录下每个文件一行。不再有"组标题 + 条数 + 只读/可写"那一条 ——
+    // 两组的身份由目录行自己说出（templates 与 My dsps），再挂一条说明纯属重复。
+    function treeGroupFiles(dir, items, emptyText, labelOf) {
         const box = document.createElement('div');
-        const th = document.createElement('div'); th.className = 'th';
-        const t = document.createElement('span'); t.textContent = title;
-        const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = String(items.length);
-        const h = document.createElement('span'); h.className = 'hint'; h.textContent = hint;
-        th.append(t, cnt, h);
-        box.appendChild(th);
-        box.appendChild(treeFileRow(dir, dir, 'dir'));
+        box.className = 'grp';
+        box.appendChild(treeFileRow(dir, dirLabel(dir), 'dir', box));
         if (!items.length) {
             const em = document.createElement('div'); em.className = 'empty';
             em.textContent = emptyText;
@@ -1278,11 +1324,10 @@
         return box;
     }
     function treeGroupTplFiles() {
-        return treeGroupFiles('模板文件', DIR_TPL, '磁盘 · 只读', TPLS,
-            '（空：templates/ 下没有 .json）', (it) => it.name);
+        return treeGroupFiles(DIR_TPL, TPLS, '（空：templates/ 下没有 .json）', (it) => it.name);
     }
     function treeGroupDspFiles() {
-        return treeGroupFiles('我的图', DIR_DSP, '磁盘 · 可写', DSPS,
+        return treeGroupFiles(DIR_DSP, DSPS,
             '（空：在 templates/ 的某一行上右键「从模板新建」）', (it) => it.title || it.name);
     }
     // 选中态 + 我的图那一行的标题（标题可改，改名后树要跟着变）
@@ -1361,7 +1406,7 @@
         grid.innerHTML = '';
         for (const ch of cellCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
         cellCharts.length = 0;
-        cellCharts.push(buildCell(READONLY_ENTRY, 0));      // 0 号输入：所有图的共同起点，排在矩阵最前
+        cellCharts.push(buildCell(READONLY_ENTRY, 0));      // 0 号输入：所有图的共同起点，排在ListView最前
         DOC.charts.forEach((e, i) => cellCharts.push(buildCell(e, i + 1)));
         buildTree();
         setGridVisible(OPEN.viewer === 'grid');   // 重建后的格子要按当前视图决定参与不参与绘制
@@ -1420,7 +1465,7 @@
         // 暂停/恢复都顺手存一次：播放状态与快照都在存档里（不提交任何草稿）
         if (!opts || !opts.silent) viewAutoSave(clean);
     }
-    // 全部暂停 = 当前视野里所有"有身份的画布"：矩阵各格 + 模板视图里的各条
+    // 全部暂停 = 当前视野里所有"有身份的画布"：ListView各格 + 模板视图里的各条
     function pauseKeys() {
         const out = [];
         for (const c of cellCharts) if (c.entry) out.push(c.entry.id);
@@ -1679,7 +1724,7 @@
             stages: src.stages,
         });
     }
-    // 落一份新的我的图：插在实验台之前（矩阵里按新建顺序排），深克隆 → 与来源没有任何共享引用。
+    // 落一份新的我的图：插在实验台之前（ListView里按新建顺序排），深克隆 → 与来源没有任何共享引用。
     // 同步在 content/My dsps/<id>.json 建文件；文件建好后跳到那一条（新建完总得看到它）。
     function addUserChart(spec) {
         const id = newChartId();
@@ -2013,8 +2058,8 @@
         }
         await loadTemplates();     // templates/ 的清单（只读预设）
         await loadDsps();          // content/My dsps/ 的清单（我的图，文件就是存档）
-        mergeDspsIntoDoc();        // 文件为准 → 并进 DOC，右栏编辑器与矩阵格子照旧按 id 找得到
-        renderCenter();            // 起手是矩阵视图（顺带把面包屑画出来）
+        mergeDspsIntoDoc();        // 文件为准 → 并进 DOC，右栏编辑器与ListView格子照旧按 id 找得到
+        renderCenter();            // 起手是ListView视图（顺带把面包屑画出来）
         refreshDirty();
     })();
     // 调试入口：控制台里 open({ file: 'templates/inv+zscore.json' }) 可直接切视图
