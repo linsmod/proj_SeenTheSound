@@ -1,190 +1,21 @@
 {
   "v": 1,
-  "charts": [
-    {
-      "id": "u1",
-      "title": "看偏离均值几个 σ",
-      "desc": "z-score：逐时刻算 12 音级的 μ 与 σ，按 ±zMax 夹紧后线性映射 0~1。看的是\"相对偏离\"而非绝对平坦度 —— 整体音量涨落会在 μ/σ 里被约掉，所以对音量变化免疫",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "zscore",
-          "on": true,
-          "p": {
-            "zMax": 2
-          }
-        }
-      ]
-    },
-    {
-      "id": "u2",
-      "title": "看瞬时动态范围",
-      "desc": "重缩放基线：逐时刻用 12 音级的 min/max 拉伸到 0~1，丝带上下缘始终贴边 —— 每个时刻都能一眼读出\"最平坦与最不坦平的音级差多少\"。数据为满窗 K 点写入时冻结；主面板极差图走每帧滚动窗，仅最左 K−1 个点的窗口不满，两者其余点一致",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "rescale",
-          "on": true,
-          "p": {}
-        }
-      ]
-    },
-    {
-      "id": "u3",
-      "title": "聚焦强音级",
-      "desc": "先 x^n（默认 n=2）再重缩放：平方让高值主导 min/max，弱音级被压成贴底的一条窄带。想看\"此刻谁最强\"用这个；代价是丢掉了动态范围本身。n>1 更极端，n<1（<1 即开方）反过来把弱音级拉开",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "pow",
-          "on": true,
-          "p": {
-            "n": 2
-          }
-        },
-        {
-          "id": "rescale",
-          "on": true,
-          "p": {}
-        }
-      ]
-    },
-    {
-      "id": "u4",
-      "title": "让弱音级显形",
-      "desc": "先 log(x+1e-3) 再重缩放：先压缩动态范围，弱音级才拿得到画布上的空间。音频 dBFS 的标准思路，也是主面板反平坦度曲线在做的事 —— 与②相反，②牺牲弱音级换峰值对比，③牺牲峰值对比换弱音级可见",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "log",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "rescale",
-          "on": true,
-          "p": {}
-        }
-      ]
-    },
-    {
-      "id": "u5",
-      "title": "原始 SFM 数据",
-      "desc": "INPUT",
-      "stages": []
-    },
-    {
-      "id": "u6",
-      "title": "只看强弱次序",
-      "desc": "分位秩：逐时刻按 12 音级大小排秩 0~1（并列取平均秩），完全丢弃幅度信息。强制均匀分布、抗异常值；只看谁排在前面，不看差多少",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "rank",
-          "on": true,
-          "p": {}
-        }
-      ]
-    },
-    {
-      "id": "u7",
-      "title": "锐化强弱对比",
-      "desc": "先重缩放再 x^n：输入已经是均匀分布，平方把 0~0.5 一段压到 0.25 以下，峰值保持。概率锐化 / 注意力权重的做法 —— 与②同为\"平方\"，但②在归一化前、⑥在归一化后",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "rescale",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "pow",
-          "on": true,
-          "p": {
-            "n": 2
-          }
-        }
-      ]
-    },
-    {
-      "id": "u8",
-      "title": "拉开中间档位",
-      "desc": "先重缩放再 tanh：0 与 1 两个端点不动，中段被展开（k 越大中段越陡）。想强调\"不上不下\"的那批音级、又不让两端溢出时用",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "rescale",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "tanh",
-          "on": true,
-          "p": {
-            "k": 6
-          }
-        }
-      ]
-    },
-    {
-      "id": "u9",
-      "title": "轻抬低位、留住高端",
-      "desc": "先重缩放再 log 并映回 0~1：0→0、1→1 端点不动，低段被温和抬起。比③温和得多 —— ③是在归一化之前压缩动态范围（幅度大），⑧是在归一化之后微调（幅度小）",
-      "stages": [
-        {
-          "id": "inv",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "rescale",
-          "on": true,
-          "p": {}
-        },
-        {
-          "id": "log01",
-          "on": true,
-          "p": {}
-        }
-      ]
-    }
-  ],
+  "charts": [],
   "view": {
-    "paused": [],
-    "shots": {},
-    "openedTabs": [
-      "u2"
+    "paused": [
+      "content/Templates/input.json"
     ],
+    "shots": {
+      "content/Templates/input.json": "/api/shots/content_Templates_input.json.png"
+    },
+    "openedTabs": [],
     "expanded": [
-      "content/My dsps/"
+      "content/Compares/",
+      "content/My dsps/",
+      "content/Templates/",
+      "content/Favorates/",
+      "content/Recents/",
+      "content/Snapshots/"
     ]
   }
 }

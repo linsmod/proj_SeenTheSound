@@ -1,0 +1,9 @@
+{
+  "title": "未命名对比",
+  "desc": "",
+  "targets": [
+    "content/Templates/input.json",
+    "content/Templates/inv+log+rescale.json",
+    "content/Templates/inv+pow+rescale.json"
+  ]
+}

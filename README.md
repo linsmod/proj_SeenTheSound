@@ -65,6 +65,7 @@ python server.py
 | `GET /api/doc` · `POST /api/doc` | 读取 / 整份写回 `content/ViewState/dsp-lab.json`（图表 + 视图状态） |
 | `GET /api/templates` · `GET /api/templates/<name>` | 列出 / 读取 `content/Templates/` 下的只读预设 |
 | `GET /api/dsps` · `POST /api/dsps[/<name>]` · `DELETE /api/dsps/<name>` | 列出 / 新建 / 写回 / 删除 `content/My dsps/` 下的「我的图」 |
+| `POST /api/cmpv` · `DELETE /api/cmpv/<name>` | 新建 / 删除对比视图 `content/Compares/<name>.cmpv`（内容为所选 DSP 的路径列表） |
 | `GET /stream` | SSE 频谱推流（60fps）：`s` 字节频谱、`gate` 门控矩阵、`freqs`/`bpo`（CQT）或 `binHz`（FFT）、`fps`/`rfps`/`err` |
 | `GET /set_smoothing?v=0.6` | EMA 平滑系数（0~0.95） |
 | `GET /set_a4?v=440` | 音准参考 A4（400~480），CQT 栅格与门控映射随之重建 |
@@ -83,7 +84,7 @@ mySoundZoneGrid/
 │   ├── My dsps/            # 我的图（可读写，一个 id 一个 .json）
 │   ├── Snapshots/          # 画布快照 PNG（暂停时落盘，恢复播放时删除）
 │   ├── ViewState/          # dsp-lab.json：DSP 页的图表 + 视图状态
-│   ├── Compares/           # 预留分类目录
+│   ├── Compares/           # 对比视图（.cmpv）：只记要比哪几条 DSP，打开时按卡片列表渲染
 │   ├── Favorates/          # 预留分类目录
 │   └── Recents/            # 预留分类目录
 ├── image.png               # README 截图

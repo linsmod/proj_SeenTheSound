@@ -35,6 +35,8 @@
     .tree .tnode .caret { flex: none; width: 13px; text-align: center; color: #8fa2c8; font-size: 10px; line-height: 1; cursor: pointer; user-select: none; }
     .tree .tnode .caret:hover { color: #fff; }
     .tree .tnode .caret.void { cursor: default; }        /* 空目录只有占位，不给展开/收起 */
+    /* 就地重命名的行内输入框：与 .tn 同格，占用同一段可用宽度 */
+    .tree .tnode .tn-edit { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: #0a1022; color: #e8eefc; border: 1px solid #4ae0ff; border-radius: 4px; font-size: 12px; padding: 1px 4px; }
     .tree .grp.collapsed > .kids { display: none; }
     .tree .kids { padding-left: 10px; }
     .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #bcc8e8; cursor: pointer; user-select: none; }
@@ -139,6 +141,10 @@
     .dsplist { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
     /* 对比视图的标题条：横跨整行（.dsplist 是网格布局，得让它占满一行） */
     .cmpv-head { grid-column: 1 / -1; padding: 2px 2px 4px; font-size: 12px; color: #8fa2c8; }
+    .dsplist .tcard.cmpv { border-style: dashed; }        /* 对比视图卡片：虚线边框，与 DSP 卡片区分 */
+    /* 缺失目标的占位卡：压暗 + 橙色标题，不可点（不绑任何事件） */
+    .dsplist .tcard.missing { border-style: dotted; opacity: 0.55; cursor: default; }
+    .dsplist .tcard.missing .ttitle { color: #ffb347; }
     .dsplist .tcard { box-sizing: border-box; display: flex; flex-direction: column; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 6px 8px 8px; cursor: pointer; }
     .dsplist .tcard:hover { border-color: rgba(74,224,255,0.45); }
     .dsplist .tcard.sel { border-color: #4ae0ff; box-shadow: 0 0 0 1px rgba(74,224,255,0.45); }
@@ -301,7 +307,7 @@
 
     // ---------- 文档模型：一份可序列化 JSON = 视图状态 + 「我的图」的内存镜像 ----------
     // { v, charts: [ {id, title, desc, stages:[{id,on,p,collapsed}]}], view }
-    //   id      = 文件名（'u1'…），与 content/My dsps/<id>.json 一一对应
+    //   id      = 文件名（'untitled'、'untitled-2'…），与 content/My dsps/<id>.json 一一对应
     //   stages  按 id 查 OPS 注册表；非法 id / 越界参数在 sanitizeStages 里就地纠正
     // 内容真相全在 content/ 下：Templates/ 只读预设、My dsps/ 我的图；DOC 只跟磁盘同步 + 存视图状态。
     // lastSaved 是最近一次存进服务端的 JSON；两者不等 = 状态位报"未落盘"。
@@ -341,7 +347,7 @@
     }
     // 视图状态独立于内容：暂停名单 + 每块画布的画面快照（PNG 落盘在 content/Snapshots/，这里只记地址）+ 右栏开着哪些标签。
     // 放在根上而不是每格里 —— 只读的原始输入格与模板条目也归它管，而且它跟标题/级联这种"内容"不是一回事。
-    // 暂停/快照的 key 有两种：格子 id（input / c1… / uN）与文件路径（content/Templates/x.json 等），
+    // 暂停/快照的 key 有两种：格子 id（input / c1… / untitled…）与文件路径（content/Templates/x.json 等），
     // 模板条目也能暂停、也存快照，所以两种 key 都要在清洗时留下。
     // 两类条目都能暂停/存快照，key 就是各自的路径；清单是异步拉的，清洗那一刻可能还是空的
     // → 只能按形态认：content/ 下的 .json / .cmpv（文件）、content/ 下以 / 结尾的目录（收起状态）。
@@ -738,20 +744,43 @@
     //   其它目录           = 同样列出，按只读文件对待（预览 / 从它新建）
     const treeEl = document.getElementById('tree');
     // 树里每一行都是一个磁盘文件（目录行 / 文件行）—— 内容真相在磁盘，不在内存文档里。
-    // 重建整棵树：只在结构变化（增删条目 / 载入新文档 / 刷新磁盘清单）时调用；选中态与标题由 syncTreeFiles 就地刷。
+    // 重建整棵树：只在结构变化（增删条目 / 载入新文档 / 刷新磁盘清单）时调用。
+    // 目录骨架来自 /api/tree（保留空目录），文件一律取自 FILES —— 新增 / 删除只改 FILES，树自然跟着变。
     function buildTree() {
         dirGroups.clear();
         treeFileNodes.clear();
         treeEl.innerHTML = '';
-        for (const nd of TREE) treeEl.appendChild(buildTreeNode(nd));   // content/ 的目录结构（磁盘为准）
+        for (const nd of mergedTree()) treeEl.appendChild(buildTreeNode(nd));
         applyDirExpand();                             // 重建后把展开状态贴回去（默认全收起）
         syncTreeFiles();
+    }
+    // 目录骨架（TREE）× 文件清单（FILES）→ 渲染用的树：目录在前，文件按名排在各目录末尾
+    function mergedTree() {
+        const byDir = new Map();
+        for (const it of FILES) {
+            const d = dirOf(it.file);
+            if (!byDir.has(d)) byDir.set(d, []);
+            byDir.get(d).push({
+                kind: 'file', name: fileNameOf(it.file), path: it.file,
+                title: it.title, desc: it.desc,
+                ...(Array.isArray(it.targets) ? { targets: it.targets } : { stages: it.stages }),
+            });
+        }
+        const build = (nodes, prefix) => {
+            const out = [];
+            for (const nd of nodes) {
+                if (nd.kind === 'dir') out.push({ ...nd, children: build(nd.children || [], nd.path) });
+            }
+            const files = (byDir.get(prefix) || []).sort((a, b) => a.path.localeCompare(b.path));
+            return out.concat(files);
+        };
+        return build(TREE, CONTENT_ROOT);
     }
 
     // ---------- 中心面板路由：open({ file, panel, viewer }) ----------
     // 中间区域是一块可换视图的面板，装什么由 open() 决定：
     //   open({ file: 'content/Templates/inv+zscore.json' }) → viewer=dspview     单个文件的链路视图
-    //   open({ file: 'content/My dsps/u1.json' })           → viewer=dspview     同上（我的图那条）
+    //   open({ file: 'content/My dsps/untitled.json' })      → viewer=dspview     同上（我的图那条）
     //   open({ file: 'content/Templates/' })                → viewer=dsplistview  某个目录的列表视图
     //   open({ file: '' })                                  → 回默认落地目录（Templates 列表）
     // viewer 可显式传（校验白名单）；不传就按 file 形态推：以 / 结尾 = 目录 → 列表，否则 = 文件 → 单视图。
@@ -794,6 +823,7 @@
         // 树里同步选中：多选状态下打开其中一条不打断整批选择，其它来源（列表/面包屑）打开则单选它
         if (!treeSel.has(file)) { setTreeSel([file]); treeAnchor = file; }
         renderCenter();
+        revealInTree(file);      // 展开沿路目录并滚到它：新建的条目打开后要能在树里看见
     }
     function renderCenter() {
         clearViewCharts();
@@ -823,10 +853,12 @@
             return b;
         };
         const sp = () => { const s = document.createElement('span'); s.className = 'sp'; s.textContent = '›'; crumbEl.appendChild(s); };
-        // content/ = ROOT：面包屑就是相对根的路径（模板/我的图 › 某个文件），根段本身不写出来
+        // content/ = ROOT：面包屑就是相对根的路径（目录 › 文件），根段本身不写出来。
+        // 当前是"某个文件"时（链路视图，或卡片列表渲染的 .cmpv 对比），最后一段是这个文件本身，前面的目录段可点回列表。
         const dir = dirOf(OPEN.file);
-        seg(relToRoot(dir) || './', dir, OPEN.viewer === 'dsplistview', dir + ' 的列表视图');
-        if (OPEN.viewer === 'dspview') { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
+        const onFile = OPEN.viewer === 'dspview' || isCmpvFile(OPEN.file);
+        seg(relToRoot(dir) || './', dir, !onFile, dir + ' 的列表视图');
+        if (onFile) { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
     }
     // 文件条目的"底部一条"= 参数条 + 播放按钮（画面在上、控件在下）。
     // 参数改的是内存里这一条链：模板是只读文件（要固化就「从模板新建」）；
@@ -919,13 +951,27 @@
         if (!items.length) {
             const e = document.createElement('div'); e.className = 'tpl-empty';
             e.textContent = dir + ' 下还没有文件'
-                + (dir === DIR_DSP ? '（在 content/Templates/ 的某一行上右键「从模板新建」就能建一条）' : '');
+                + (dir === DIR_DSP ? '（右键这一行「新建 DSP」，或在 content/Templates/ 的某一行上右键「从模板新建」）' : '');
             listEl.appendChild(e);
             return;
         }
-        for (const t of items) buildListCard(t, listEl);
+        for (const t of items) (Array.isArray(t.targets) ? buildCmpvCard : buildListCard)(t, listEl);
     }
-    // 对比视图（.cmpv）：读它列的目标文件，用同一套卡片渲染；目标已经不在就跳过
+    // 缺失目标的占位卡片：目标文件已被删 / 改名时在原位占个位（不可点、不跑链路）
+    function buildMissingCard(file, host) {
+        const card = document.createElement('div');
+        card.className = 'tcard missing';
+        card.dataset.file = file;
+        const nf = document.createElement('div'); nf.className = 'tfile'; nf.textContent = file;
+        const tt = document.createElement('div'); tt.className = 'ttitle'; tt.textContent = '（缺失）';
+        const ds = document.createElement('div'); ds.className = 'tdesc';
+        ds.textContent = '目标文件不在了（已删除或改名）';
+        card.append(nf, tt, ds);
+        card.title = file + '\n目标文件不存在';
+        host.appendChild(card);
+    }
+    // 对比视图（.cmpv）：读它列的目标文件，用同一套卡片渲染。
+    // 个别目标不在 → 在原位给一张缺失占位卡；全都找不到才只给一句提示。
     async function renderCmpvList(file) {
         listEl.hidden = false;
         listEl.textContent = '';
@@ -935,22 +981,29 @@
         if (!doc || OPEN.file !== file || OPEN.viewer !== 'dsplistview') return;
         listEl.textContent = '';
         const targets = Array.isArray(doc.targets) ? doc.targets : [];
+        const loaded = [];
+        for (const tf of targets) loaded.push([tf, await getItem(tf)]);
+        const missing = loaded.filter(([, t]) => !t).length;
         const head = document.createElement('div');
         head.className = 'cmpv-head';
-        head.textContent = `${doc.title || doc.name} · 对比 ${targets.length} 项`;
+        head.textContent = `${doc.title || doc.name} · 对比 ${targets.length} 项` + (missing ? ` · 缺失 ${missing}` : '');
         head.title = '来自 ' + file;
         listEl.appendChild(head);
-        let shown = 0;
-        for (const tf of targets) {
-            const t = await getItem(tf);
-            if (!t) continue;                  // 目标文件被删 / 改名了 → 跳过
-            buildListCard(t, listEl);
-            shown++;
+        if (!targets.length) {
+            const e = document.createElement('div'); e.className = 'tpl-empty';
+            e.textContent = '这份对比里还没有目标';
+            listEl.appendChild(e);
+            return;
         }
-        if (!shown) {
+        if (missing === targets.length) {           // 全都缺失：只给一句提示，不铺一屏占位
             const e = document.createElement('div'); e.className = 'tpl-empty';
             e.textContent = '这份对比里引用的文件都不在了';
             listEl.appendChild(e);
+            return;
+        }
+        for (const [tf, t] of loaded) {
+            if (t) buildListCard(t, listEl);
+            else buildMissingCard(tf, listEl);      // 个别缺失 → 原位占位
         }
     }
     // dspview：单个文件的预览视图 —— 大画布 + 参数条/播放按钮 + 逐级算子 + 入口按钮。
@@ -1205,6 +1258,98 @@
         setTreeSel(vis.slice(Math.min(a, b), Math.max(a, b) + 1));   // 锚点不动：可以接着 Shift 扩 / 缩范围
     }
     function treeSelPaths() { return [...treeSel]; }
+    // ---------- 就地重命名：行内变输入框，回车提交 / Esc 取消（F2 或右键菜单触发） ----------
+    // 只对可写文件开放：「我的图」（content/My dsps/*.json）与对比视图（content/Compares/*.cmpv）。
+    // 只读预设 Templates 不给改 —— 它是出厂内容，"要改就从模板新建"。
+    function canRename(file) { return isDspFile(file) || isCmpvFile(file); }
+    function startRename(file) {
+        const n = treeFileNodes.get(file);
+        if (!n || n.renaming) return;
+        const stem = stemOf(file);
+        const ext = fileNameOf(file).slice(stem.length);   // '.json' / '.cmpv'
+        n.renaming = true;
+        const input = document.createElement('input');
+        input.className = 'tn-edit';
+        input.type = 'text';
+        input.value = stem;
+        input.spellcheck = false;
+        n.tn.hidden = true;                  // 藏起文本，输入框顶在同一格
+        n.tn.after(input);
+        input.focus();
+        input.select();
+        let done = false;
+        const finish = (commit) => {
+            if (done) return;
+            done = true;
+            n.renaming = false;
+            const val = input.value.trim();
+            input.remove();
+            n.tn.hidden = false;
+            if (commit && val && val !== stem) doRename(file, val + ext);
+        };
+        input.addEventListener('keydown', (ev) => {
+            ev.stopPropagation();            // 别冒泡到树行的 Enter 打开 / Esc 清空
+            if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+            else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+        });
+        input.addEventListener('blur', () => finish(true));
+        ['click', 'dblclick', 'contextmenu'].forEach((t) => input.addEventListener(t, (ev) => ev.stopPropagation()));
+    }
+    async function doRename(oldPath, newName) {
+        const b = await postDsp('/api/rename', 'POST', { path: oldPath, name: newName });
+        const item = b && b.item;
+        if (!item) { buildTree(); return; }      // 失败：重建树把行恢复原样
+        renameLocal(oldPath, item);
+    }
+    // 改名后把各处"指向旧路径"的状态搬到新路径（我的图的 id = 文件名，所以 DOC 条目也要跟着改）
+    function renameLocal(oldPath, item) {
+        const newPath = item.file;
+        const oldStem = stemOf(oldPath), newStem = stemOf(newPath);
+        delete item._stages;
+        const fi = FILES.findIndex((x) => x.file === oldPath);
+        if (fi >= 0) FILES[fi] = item; else FILES.push(item);
+        if (fileCache.has(oldPath)) { fileCache.set(newPath, item); fileCache.delete(oldPath); }
+        const c = DOC.charts.find((x) => x.id === oldStem);
+        if (c) c.id = newStem;
+        if (drafts.has(oldStem)) { drafts.set(newStem, drafts.get(oldStem)); drafts.delete(oldStem); }
+        if (selected === oldStem) { selected = newStem; viewOf().openedTabs = [newStem]; }
+        if (treeSel.has(oldPath)) { treeSel.delete(oldPath); treeSel.add(newPath); }
+        if (treeAnchor === oldPath) treeAnchor = newPath;
+        if (listSel === oldPath) listSel = newPath;
+        if (OPEN.file === oldPath) OPEN.file = newPath;      // 正开着它 → 视图跟着改名
+        const v = viewOf();
+        v.paused = v.paused.map((k) => (k === oldPath ? newPath : k));
+        if (v.shots[oldPath]) { v.shots[newPath] = v.shots[oldPath]; delete v.shots[oldPath]; }
+        lastSaved = entryDocJson(DOC);                       // 改名不改内容，基线跟着更新
+        buildTree();
+        bindDraft(); syncEditorInputs(); labSync(true);
+        renderCenter();
+        revealInTree(newPath);
+        refreshDirty();
+    }
+    // 把某个路径"露"到树里：沿路的祖先目录全部展开（目录本身也展开），并滚入视野。
+    // 新建 / 打开一条之后调它（#open），否则新文件落在收起目录里，用户看不到它。
+    function revealInTree(file) {
+        if (!file || !treeFileNodes.size) return;
+        const parts = file.split('/').filter(Boolean);
+        const upto = file.endsWith('/') ? parts.length : parts.length - 1;   // 目录自身也要展开
+        const v = viewOf();
+        if (!Array.isArray(v.expanded)) v.expanded = [];
+        const add = [];
+        let acc = '';
+        for (let i = 0; i < upto; i++) {
+            acc += parts[i] + '/';
+            if (acc !== CONTENT_ROOT && v.expanded.indexOf(acc) < 0) add.push(acc);
+        }
+        if (add.length) {
+            const clean = !archiveDirty();      // 先取：改完 view 就取不到了
+            v.expanded.push(...add);
+            applyDirExpand();
+            viewAutoSave(clean);                // 展开状态进存档，刷新后仍然展开
+        }
+        const n = treeFileNodes.get(file);
+        if (n && n.row.offsetParent) n.row.scrollIntoView({ block: 'nearest' });
+    }
     function treeFileRow(file, label, cls, box, expandable) {
         const row = document.createElement('div');
         row.className = 'tnode ' + cls;
@@ -1289,9 +1434,60 @@
     menuEl.hidden = true;
     document.body.appendChild(menuEl);
     function closeMenu() { menuEl.hidden = true; }
+    // ---------- 菜单项注册表：加一项不必再改 fileMenuItems ----------
+    // 按「节点类型 × 路径」注册，值是槽位函数 —— 收到被右键那行的 item，返回这一项的描述：
+    //   FOLDER.contextMenu.newFile = (item) => ({ title: '新建 DSP', hint: '…', onClick: () => … });   // 所有目录行
+    //   FOLDER(DIR_DSP).newFile    = (item) => ({ … });                                               // 只这一个目录行
+    //   FILE.contextMenu.xx        = (item) => () => doIt(item);                                      // 返回函数 = 直接当 onClick
+    // 返回 null / undefined / false → 这一项这次不出现（可以按 item 临时决定给不给）。
+    // 返回函数比返回对象更简：一项只有一个动作时，函数本体就是 onClick，标题用槽位名兜底。
+    // 同名槽位后注册的覆盖先前的；显示顺序：精确路径注册的项在前，通配 '*'（FOLDER/FILE.contextMenu）的项在后。
+    const menuSlots = { folder: new Map(), file: new Map() };   // kind → path → Map(槽位名 → 槽位函数)
+    function menuScope(kind, path) {
+        let slots = menuSlots[kind].get(path);
+        if (!slots) { slots = new Map(); menuSlots[kind].set(path, slots); }
+        return new Proxy(Object.create(null), {               // 支持 .slotName = fn 这种声明式写法
+            get: (_, k) => slots.get(k),
+            set: (_, k, v) => { slots.set(k, v); return true; },
+        });
+    }
+    const FOLDER = (path = '*') => menuScope('folder', path);   // 目录行
+    const FILE = (path = '*') => menuScope('file', path);       // 文件行
+    FOLDER.contextMenu = menuScope('folder', '*');
+    FILE.contextMenu = menuScope('file', '*');
+    // 被右键那一行 → 上下文（槽位函数的入参，也原样交给 onClick）
+    function menuCtx(file) {
+        const isDir = file.endsWith('/');
+        const nm = isDir ? file.replace(/\/$/, '').split('/').pop() : stemOf(file);
+        return {
+            file, path: file, name: nm, isDir, isFile: !isDir,
+            dir: isDir ? file : dirOf(file),
+            id: !isDir && isDspFile(file) ? nm : '',
+            item: isDir ? null : itemOf(file),
+        };
+    }
+    // 把注册表里匹配这一行的项收成与内置项同样的格式：[标题, 提示, 动作, 附加类]
+    function contributedItems(kind, file) {
+        const ctx = menuCtx(file);
+        const out = [];
+        for (const key of [file, '*']) {
+            const slots = menuSlots[kind].get(key);
+            if (!slots) continue;
+            for (const [slot, fn] of slots) {
+                let v = fn;
+                try { if (typeof fn === 'function') v = fn(ctx); }
+                catch (err) { console.warn('[menu:' + slot + ']', err); v = null; }
+                if (v === null || v === undefined || v === false) continue;
+                if (typeof v === 'function') out.push([slot, '', () => v(ctx), '']);   // 返回函数 = 本体就是动作
+                else out.push([v.title || slot, v.hint || '', () => { if (v.onClick) v.onClick(ctx); }, v.danger ? 'danger' : '']);
+            }
+        }
+        return out;
+    }
     // 文件行的菜单：目录行只有「打开列表」；文件行按目录给不同的动作
     //   只读文件（content/Templates/ 等）→ 从模板新建（只能克隆出自己的一条）
     //   我的图（content/My dsps/）        → 编辑 / 复制 / 删除（自己的文件，可改可删）
+    //   两种行都还能由上面的 FOLDER / FILE 注册表再挂项（如「我的图」目录行上的「新建 DSP」）
     function fileMenuItems(file) {
         const t = itemOf(file);
         const isDir = file.endsWith('/');
@@ -1310,22 +1506,32 @@
             isDir ? file + ' 的列表视图（dsplistview）'
                 : (cmpv ? `打开 ${file}（卡片列表对比）` : `打开 ${file} 的链路视图（dspview）`),
             () => open({ file }), '']];
-        if (!t || isDir) return items;
+        const extra = contributedItems(isDir ? 'folder' : 'file', file);   // 注册进来的项夹在「打开」与内置管理动作之间
+        const own = [];
         if (cmpv) {
-            items.push(['删除', '删掉这份对比视图（不动被引用的 DSP 文件）', () => deleteCmpv(file), 'danger']);
-            return items;
-        }
-        if (isDspFile(file)) {
+            own.push(['重命名', '就地改名（回车提交，Esc 取消）', () => startRename(file), '']);
+            own.push(['删除', '删掉这份对比视图（不动被引用的 DSP 文件）', () => deleteCmpv(file), 'danger']);
+        } else if (!t) {
+            // 磁盘清单里还没有这一条（比如刚建完/刚删掉）：只剩「打开」与注册项
+        } else if (isDspFile(file)) {
             const id = stemOf(file);
-            items.push(['编辑', '在右栏编辑器里改标题 / 说明 / 级联', () => { if (entryOf(id)) selectChart(id); }, '']);
-            items.push(['保存', '把这一条写回文件', () => saveDspFile(t), '']);
-            items.push(['复制', '克隆成新的一条', () => cloneAsNew(id), '']);
-            items.push(['删除', '从 content/My dsps/ 里删掉这一条', () => deleteChart(id), 'danger']);
+            own.push(['编辑', '在右栏编辑器里改标题 / 说明 / 级联', () => { if (entryOf(id)) selectChart(id); }, '']);
+            own.push(['保存', '把这一条写回文件', () => saveDspFile(t), '']);
+            own.push(['重命名', '就地改名（回车提交，Esc 取消）', () => startRename(file), '']);
+            own.push(['复制', '克隆成新的一条', () => cloneAsNew(id), '']);
+            own.push(['删除', '从 content/My dsps/ 里删掉这一条', () => deleteChart(id), 'danger']);
         } else {
-            items.push(['从模板新建', '把这份模板克隆成一份可编辑的「我的图」', () => newFromStagesFile(t), '']);
+            own.push(['从模板新建', '把这份模板克隆成一份可编辑的「我的图」', () => newFromStagesFile(t), '']);
         }
-        return items;
+        return items.concat(extra, own);
     }
+    // 「我的图」目录行：新建一份空的「我的图」（内容 = 一条空链，标题随后在右栏改）
+    // 命名跟对比视图同一套：untitled、untitled-2…（文件名即 id，也即树里显示的那一行）
+    FOLDER(DIR_DSP).newFile = (item) => ({
+        title: '新建 DSP',
+        hint: `在 ${item.dir} 下建一份空链，随后在右栏改标题与级联`,
+        onClick: () => addUserChart({ title: 'untitled', desc: '', stages: [] }),
+    });
     function openFileMenu(anchor, file) { openMenuAt(anchor, fileMenuItems(file)); }
     function openMenuAt(anchor, items) {
         if (!items || !items.length) return;
@@ -1656,12 +1862,13 @@
         lastSaved = ok ? entryDocJson(DOC) : prev;         // 失败就把基线退回去，状态位重新亮起来
         refreshDirty();
     }
-    // id = 文件名（u1、u2…），所以要把磁盘清单里的名字也避开
+    // id = 文件名（untitled、untitled-2…，与对比视图同一套命名），所以要把磁盘清单里的名字也避开
     function newChartId() {
-        let i = 1;
         const used = (id) => DOC.charts.some((c) => c.id === id) || FILES.some((it) => stemOf(it.file) === id);
-        while (used('u' + i)) i++;
-        return 'u' + i;
+        if (!used('untitled')) return 'untitled';
+        let i = 2;
+        while (used('untitled-' + i)) i++;
+        return 'untitled-' + i;
     }
     // 复制：把来源深克隆一份成新的「我的图」，并跳到该副本接着编辑。来源那一份不动。
     // srcId 缺省 = 用当前草稿（"把右栏这条链固化成一张图"）；自由探索草稿也能这样固化。
