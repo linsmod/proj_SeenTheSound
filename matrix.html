@@ -34,24 +34,26 @@
        minmax(280px,·) 让列数随可用宽度自适应。flex 基准取 280（= 一列的最小宽），
        基准和超过容器就换行，实验台自动落到末尾。min-width:0 允许被压到内容宽以下 */
     .grid { flex: 1 1 280px; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; align-content: start; }
-    .cell { height: 210px; box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); padding: 6px 8px 8px; display: flex; flex-direction: column; }
-    .cell .hd { flex: none; font-size: 14px; font-weight: 700; color: #bcc8e8; cursor: help; }
-    .cell .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    canvas.mx { flex: none; display: block; width: 100%; height: 132px; background: #0a1022; border-radius: 6px; }
-    /* 参数条贴单元格底部：有无参数都占同一条带（选择器收窄到 .cell，避免影响顶栏的 #globalBar） */
-    .cell .pbar { margin-top: auto; }
-    /* 实验台：并排时是右侧栏（max-width 封住 grow，桌面端不会被拉宽）；
-       换行到页面末尾后独占一行，靠 flex-shrink + min-width:0 退让成通栏，不会横向溢出 */
-    .lab { flex: 1 1 372px; min-width: 0; max-width: 372px; align-self: flex-start;
-           padding: 8px 10px 10px; background: #0e1630; border-radius: 8px; }
-    /* 吸附 + 栏内滚动只在并排时启用：换行到下方后 sticky 会让整块钉在视口顶、max-height 又逼出内滚动，
+    /* 卡片外壳：8 张固定图（.cell）与实验台（.lab）共用同一套外观 —— 背景/圆角/描边/纵向流。
+       实验台的"上半身"（标题 + 副标题 + 画布 = 输出结果）与一个 cell 的上半身完全同构，
+       下半身是级联列表，对应 cell 里 .pbar 那条带所处的位置。 */
+    .cell, .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; }
+    .cell { height: 210px; }
+    .lab { flex: 1 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
+    /* 吸附 + 栏内滚动只在并排时启用：换行到下方后 sticky 会把整块钉在视口顶、max-height 又逼出内滚动，
        在手机上反而难用。阈值 686 与上面 flex 基准之和一致，两处数字要同步改 */
     @media (min-width: 686px) {
         .lab { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
     }
-    .lab-hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
-    .lab-hd .t { font-size: 14px; font-weight: 700; }
-    .lab-hd .pipe { margin: 0; flex: 1 1 320px; min-width: 0; }
+    /* 标题 / 副标题：cell 与实验台上半身共用 */
+    .cell .hd, .lab .hd { flex: none; font-size: 14px; font-weight: 700; color: #bcc8e8; }
+    .cell .hd { cursor: help; }                              /* cell 标题带 title 说明，实验台标题没有 */
+    .cell .pipe, .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    canvas.mx { flex: none; display: block; width: 100%; height: 132px; background: #0a1022; border-radius: 6px; }
+    /* 参数条贴单元格底部：有无参数都占同一条带（选择器收窄到 .cell，避免影响顶栏的 #globalBar） */
+    .cell .pbar { margin-top: auto; }
+    /* 下半身的工具条（加一级 / 清空）—— 与级联列表同属下半身，不进标题行 */
+    .ltools { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
     .lbtn { background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 6px; font-size: 12px; padding: 3px 12px; cursor: pointer; }
     .lbtn:hover { background: #263a60; color: #fff; }
     /* 级联逐级出图，且每张卡自带全部编排控件（收起也可用）：
@@ -68,7 +70,6 @@
     .lcard-hd .op { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; color: #5a6c94; }
     .lcard.skip .lcard-hd .op { text-decoration: line-through; }
     .lcard.skip { opacity: 0.5; }                          /* 该级已停用：出图与上一级相同 */
-    .lcard.base .lcard-hd .ord { color: #4ae0ff; }         /* 输入级（1-v）标青，和变换级区分 */
     .lcard-hd .sops { flex: none; display: flex; gap: 3px; }
     .lcard-hd .sops button { width: 22px; height: 20px; padding: 0; background: #141d34; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.10); border-radius: 4px; font-size: 11px; line-height: 1; cursor: pointer; }
     .lcard-hd .sops button:hover:not(:disabled) { background: #263a60; color: #fff; }
@@ -90,9 +91,10 @@
 <div class="wrap">
     <div class="grid" id="grid"></div>
     <div class="lab">
-        <div class="lab-hd">
-            <span class="t">⑨ 自由探索 · 级联</span>
-            <span class="pipe" id="labPipe"></span>
+        <div class="hd">⑨ 自由探索 · 级联</div>
+        <div class="pipe" id="labPipe"></div>
+        <canvas class="mx" id="labCanvas"></canvas>
+        <div class="ltools">
             <button class="lbtn" id="labAdd" type="button">+ 加一级</button>
             <button class="lbtn" id="labClear" type="button">清空</button>
         </div>
@@ -141,6 +143,8 @@
     // 每级自带 params spec（{key,label,type,min,max,step,def}），由 buildParams 统一渲染成控件。
     // 一级 = { id, on, p }：id 指向 OPS，on=false 跳过，p 存该级实参（默认值由 buildParams 填）。
     const OPS = {
+        // 反相：原本写死在 computeChart 里的固定第一步，现在降级为普通可选算子（可删、可换序、可重复）。
+        inv:  { label: '1-v 反相', kind: 'scalar', f: (x) => 1 - x, params: [] },
         id:    { label: '恒等', kind: 'scalar', f: (x) => x, params: [] },
         pow:   { label: '幂', kind: 'scalar', f: (x, p) => Math.pow(Math.max(0, x), p.n),
                  params: [{ key: 'n', label: 'n', type: 'range', min: 0.1, max: 4, step: 0.1, def: 2 }] },
@@ -187,14 +191,14 @@
     const stage = (id) => ({ id, on: true, p: {} });
     // 图表矩阵定义：按文档"常用组合矩阵"挑选 位置 × 函数 的组合，统一表达为有序级联
     const CHART_DEFS = [
-        { title: '① 基线 · 重缩放', desc: '取反后逐时刻用 12 音级 min/max 拉伸：丝带上下缘始终贴边（满窗 K 点写入时冻结；主面板极差图走每帧滚动窗，仅最左 K−1 个点的窗口不满，两者其余点一致）', stages: [stage('rescale')] },
-        { title: '② 归一化前 × 幂', desc: '先 x^n 再重缩放：n>1 放大高值差异（强调峰值），n<1 温和拉伸低值', stages: [stage('pow'), stage('rescale')] },
-        { title: '③ 归一化前 × log', desc: '先 log(x+1e-3) 再重缩放：强力拉伸低值、压缩高值（音频 dBFS 思路）', stages: [stage('log'), stage('rescale')] },
-        { title: '④ 归一化内 · z-score', desc: '逐时刻标准化 (x−μ)/σ，再按 ±zMax 夹紧线性映射 0~1：看偏离均值几个 σ', stages: [stage('zscore')] },
-        { title: '⑤ 归一化内 · 分位秩', desc: '逐时刻按 12 音级大小排秩 0~1（并列取平均秩）：强制均匀分布、抗异常值，只看相对位次', stages: [stage('rank')] },
-        { title: '⑥ 归一化后 × 幂', desc: '重缩放后再 x^n：锐化概率形状，低值压得更死、峰值保持', stages: [stage('rescale'), stage('pow')] },
-        { title: '⑦ 归一化后 × tanh', desc: '重缩放后过 tanh：0/1 端点不动、中段放大、两端压缩（k 越大中段越陡）', stages: [stage('rescale'), stage('tanh')] },
-        { title: '⑧ 归一化后 × log', desc: '重缩放后 log 并重映射回 0~1：温和拉伸低段（0→0、1→1）', stages: [stage('rescale'), stage('log01')] },
+        { title: '① 基线 · 重缩放', desc: '取反后逐时刻用 12 音级 min/max 拉伸：丝带上下缘始终贴边（满窗 K 点写入时冻结；主面板极差图走每帧滚动窗，仅最左 K−1 个点的窗口不满，两者其余点一致）', stages: [stage('inv'), stage('rescale')] },
+        { title: '② 归一化前 × 幂', desc: '先 x^n 再重缩放：n>1 放大高值差异（强调峰值），n<1 温和拉伸低值', stages: [stage('inv'), stage('pow'), stage('rescale')] },
+        { title: '③ 归一化前 × log', desc: '先 log(x+1e-3) 再重缩放：强力拉伸低值、压缩高值（音频 dBFS 思路）', stages: [stage('inv'), stage('log'), stage('rescale')] },
+        { title: '④ 归一化内 · z-score', desc: '逐时刻标准化 (x−μ)/σ，再按 ±zMax 夹紧线性映射 0~1：看偏离均值几个 σ', stages: [stage('inv'), stage('zscore')] },
+        { title: '⑤ 归一化内 · 分位秩', desc: '逐时刻按 12 音级大小排秩 0~1（并列取平均秩）：强制均匀分布、抗异常值，只看相对位次', stages: [stage('inv'), stage('rank')] },
+        { title: '⑥ 归一化后 × 幂', desc: '重缩放后再 x^n：锐化概率形状，低值压得更死、峰值保持', stages: [stage('inv'), stage('rescale'), stage('pow')] },
+        { title: '⑦ 归一化后 × tanh', desc: '重缩放后过 tanh：0/1 端点不动、中段放大、两端压缩（k 越大中段越陡）', stages: [stage('inv'), stage('rescale'), stage('tanh')] },
+        { title: '⑧ 归一化后 × log', desc: '重缩放后 log 并重映射回 0~1：温和拉伸低段（0→0、1→1）', stages: [stage('inv'), stage('rescale'), stage('log01')] },
     ];
 
     const chartCount = CHART_N;   // 固定满窗（滚动示波器式，与主面板一致）
@@ -202,12 +206,13 @@
     const rankTmp = new Float64Array(SFM_PC);   // rank 就地改写前先快照原值
 
     // 单图管道计算：sfmLines（12×CHART_N 滑窗合成的 SFM）→ ch.out（同布局，0~1 归一值）
-    // stages 是唯一事实来源：固定图与下方实验台共用同一条执行路径
+    // stages 是唯一事实来源：固定图与下方实验台共用同一条执行路径。
+    // 反相不再写死在这里 —— 它是 OPS 里的普通算子 inv，由各图自己的 stages 决定要不要、放在哪。
     function computeChart(ch, sfmLines) {
         const out = ch.out, stages = ch.stages;
         for (let p = 0; p < chartCount; p++) {
-            // 1) 取反（1-v）
-            for (let pc = 0; pc < SFM_PC; pc++) pipeTmp[pc] = 1.0 - sfmLines[pc * CHART_N + p];
+            // 1) 取原始 SFM（不再预反相）
+            for (let pc = 0; pc < SFM_PC; pc++) pipeTmp[pc] = sfmLines[pc * CHART_N + p];
             // 2) 按序执行各级：scalar 逐音级映射，vector 整条一起看
             for (let s = 0; s < stages.length; s++) {
                 const st = stages[s];
@@ -277,7 +282,8 @@
     // 管道摘要（图标题下方等宽小字，参数/顺序/启用状态改动即时刷新）
     // vector 级加花括号标出（整条链的跨音级断点），停用级用删除线标出（不参与执行）
     function pipeSummary(ch) {
-        const parts = ['1-v'];
+        if (!ch.stages.length) return '原始 SFM → 屏幕';   // 0 号输入：stages 为空 = 不做任何变换
+        const parts = [];
         for (const st of ch.stages) {
             const op = OPS[st.id];
             const fp = Object.entries(st.p).map(([k, v]) => `${k}=${(+v).toFixed(1)}`).join(',');
@@ -379,7 +385,7 @@
     // ---------- 图表矩阵：构建 DOM + 绘制 ----------
     // 画布尺寸不写死：CSS 侧由 grid 列宽自适应，这里实测每块画布的 CSS 宽当逻辑宽，
     // 位图 = 实测宽 × dpr → CSS 尺寸与位图永远 1:1，任何宽度下文字都不发虚。
-    const CH = 132, LAB_C_H = 112;   // 8 图 / 实验台逐级图各自的画布高
+    const CH = 132, LAB_C_H = 112;   // 8 图 / 实验台输出图 / 实验台逐级图各自的画布高（输出图与 cell 同高）
     const grid = document.getElementById('grid');
     const charts = [];
     // 全局图例：12 音级色块 + 音名，各图共用（画线不再逐条标音名）
@@ -400,6 +406,7 @@
     // 不锁 CSS 宽度：锁了就没法自适应（index 的主画布锁宽是因为它尺寸固定，这里不需要）。
     function fitCanvas(cv, h) {
         const w = Math.max(80, Math.round(cv.getBoundingClientRect().width));
+        cv.style.height = h + 'px';            // CSS 高必须跟着逻辑高走：写死 132 会把 112 的位图纵向拉伸变形
         const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
         const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
         if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
@@ -408,6 +415,33 @@
         ctx.textRendering = 'geometricPrecision';   // 文本按几何精度渲染（不支持的浏览器自动忽略）
         return w;
     }
+    // 0 号：输入（逐音级原始 SFM，未反相、未做任何变换）。放在 grid 最前面，
+    // 是下面 8 张固定图与右侧实验台级联的共同起点。
+    // stages 为空 → computeChart 直接把 clamp(sfmLines) 写进 out。反相是 OPS 里的可选算子 inv，
+    // 由各图自己的 stages 决定要不要，所以这一格显示的是"不反相"的原始输入。
+    (function buildInputCell() {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.innerHTML = `<div class="hd" title="0 号输入：逐音级原始 SFM，未经反相也未经任何变换。反相（1-v）是可选算子，由各图/各级自己决定要不要。"><span>输入 · 原始 SFM</span></div><div class="pipe"></div>`;
+        const cv = document.createElement('canvas');
+        cv.className = 'mx';
+        cell.appendChild(cv);
+        const pbar = document.createElement('div');
+        pbar.className = 'pbar';
+        cell.appendChild(pbar);
+        grid.appendChild(cell);
+        const ch = {
+            title: '输入 · 原始 SFM',
+            stages: [],
+            out: new Float32Array(SFM_PC * CHART_N),
+            w: 0, h: CH,
+            cv, ctx: cv.getContext('2d'),
+            pipeEl: cell.querySelector('.pipe'),
+        };
+        ch.w = fitCanvas(cv, CH);
+        ch.pipeEl.textContent = pipeSummary(ch);
+        charts.push(ch);
+    })();
     CHART_DEFS.forEach((def) => {
         const cell = document.createElement('div');
         cell.className = 'cell';
@@ -464,7 +498,19 @@
         return out;
     }
     function labLoad() {
-        try { return labSanitize(JSON.parse(localStorage.getItem(LAB_KEY) || 'null')); } catch (e) { return null; }
+        try {
+            const list = labSanitize(JSON.parse(localStorage.getItem(LAB_KEY) || 'null'));
+            return list ? ensureInv(list) : null;
+        } catch (e) { return null; }
+    }
+    // 反相曾经写死在管道里（旧版每条链都隐含 1-v），现在是可选算子。
+    // 旧存档里不可能有 inv 这一级，补在最前面以保持原语义；幂等（已有就不再补）。
+    // 空链例外：那只能是用户主动清空的结果（清空按钮在 inv 出现之前也存在），
+    // 补一级等于推翻用户的操作，所以原样尊重。
+    function ensureInv(list) {
+        if (!list.length) return list;
+        if (!list.some((s) => s.id === 'inv')) list.unshift({ id: 'inv', on: true, p: {}, collapsed: true });
+        return list;
     }
     function labSave() {
         try { localStorage.setItem(LAB_KEY, JSON.stringify(lab.stages)); } catch (e) {}
@@ -476,12 +522,21 @@
         list.forEach((s, i) => { if (typeof s.collapsed !== 'boolean') s.collapsed = i !== last; });
         return list;
     }
-    // lab 只存状态（stages）；出图交给 labCharts，二者分开，级联增减时不用动状态对象
+    // lab 只存状态（stages）；出图交给 labCharts（二者分开，级联增减时不用动状态对象）
     const lab = {
         title: '⑨ 自由探索 · 级联',
-        // 首次访问的默认级联：scalar → vector → scalar，演示三种 kind 的位置差异
-        stages: labDefaultCollapse(labLoad() || labSanitize([{ id: 'pow', on: true, p: {} }, { id: 'rescale', on: true, p: {} }, { id: 'log01', on: true, p: {} }])),
+        // 首次访问的默认级联：反相 → scalar → vector → scalar，演示三种 kind 的位置差异
+        stages: labDefaultCollapse(labLoad() || labSanitize([{ id: 'inv', on: true, p: {} }, { id: 'pow', on: true, p: {} }, { id: 'rescale', on: true, p: {} }, { id: 'log01', on: true, p: {} }])),
     };
+    // 输出图：就是实验台上半身那块画布（HTML 里已就位，和 cell 的画布同一位置、同一高度）。
+    // 数值上必然等于末级卡（都是跑完全部 N 级），但它不随逐级收起/展开，也不随滚动移出视野，
+    // 所以单独留在上半身当"当前自由组合的结果"。不需要卡片包裹，也没有额外标签。
+    const labOut = { stages: [], out: new Float32Array(SFM_PC * CHART_N), w: 0, h: CH, hidden: false };
+    labOut.cv = document.getElementById('labCanvas');
+    labOut.ctx = labOut.cv.getContext('2d');
+    labOut.stages = lab.stages.slice();
+    labOut.w = fitCanvas(labOut.cv, CH);
+    charts.push(labOut);
     // 逐级出图 + 级联操作合到同一张卡片：一张卡 = 一级 = 一张图。
     // 第 k 张图的 stages = 前 k 级。k=0 即输入（1-v 后、任何变换前），共 N+1 张。
     // 复用 computeChart 而不做增量快照：每张就是"只跑前 k 级"的独立计算，
@@ -493,18 +548,18 @@
     // 收起时头部足以判断"这是第几级、什么算子、参数多少、在链上什么位置"，且仍可编排。
     const labCharts = [];
     function rebuildLabCharts() {
+        labOut.stages = lab.stages.slice();     // 输出图跟着最新级联走（元素同引用，参数改动即时生效）
         for (const c of labCharts) { const i = charts.indexOf(c); if (i >= 0) charts.splice(i, 1); }
         labCharts.length = 0;
         const host = document.getElementById('labCharts');
         host.innerHTML = '';
         const last = lab.stages.length;          // 末级索引 = 最后一张图
-        for (let k = 0; k <= last; k++) {
-            const st = k > 0 ? lab.stages[k - 1] : null;
-            // 收起态：k>0 由该级的 collapsed 决定（缺省见 labDefaultCollapse：只展开末级）；
-            // k=0 是输入图不是"级"，同样按"不是末级就收起"，空级联时它就是末级 → 展开。
-            const collapsed = k === 0 ? last !== 0 : !!st.collapsed;
+        // 只画第 1..N 级（输入是 grid 的 0 号格，不在这里重复出图）
+        for (let k = 1; k <= last; k++) {
+            const st = lab.stages[k - 1];
+            const collapsed = !!st.collapsed;    // 缺省见 labDefaultCollapse：只展开末级
             const card = document.createElement('div');
-            card.className = 'lcard' + (k === 0 ? ' base' : '') + (collapsed ? ' collapsed' : '');
+            card.className = 'lcard' + (collapsed ? ' collapsed' : '');
 
             const hd = document.createElement('div');
             hd.className = 'lcard-hd';
@@ -515,78 +570,66 @@
             caret.title = '收起/展开这一级（收起后仍保留标题、参数与全部编排按钮）';
             hd.appendChild(caret);
 
-            let en = null, sel = null;
-            if (st) {
-                en = document.createElement('input');
-                en.type = 'checkbox';
-                en.className = 'en';
-                en.checked = st.on;
-                en.title = '启用/停用这一级（停用不参与执行，出图与上一级相同）';
-                en.addEventListener('change', () => { st.on = en.checked; labSync(false); });
-                hd.appendChild(en);
+            const en = document.createElement('input');
+            en.type = 'checkbox';
+            en.className = 'en';
+            en.checked = st.on;
+            en.title = '启用/停用这一级（停用不参与执行，出图与上一级相同）';
+            en.addEventListener('change', () => { st.on = en.checked; labSync(false); });
+            hd.appendChild(en);
 
-                sel = document.createElement('select');
-                sel.className = 'sel';
-                sel.title = OPS[st.id].kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射';
-                for (const key of Object.keys(OPS)) {
-                    const o = document.createElement('option');
-                    o.value = key;
-                    o.textContent = (OPS[key].kind === 'vector' ? '⧉ ' : '') + OPS[key].label;
-                    sel.appendChild(o);
-                }
-                sel.value = st.id;
-                sel.addEventListener('change', () => {
-                    st.id = sel.value; st.p = {};      // 换算子 → 参数回到该算子的默认值
-                    labSync(true);
-                });
-                hd.appendChild(sel);
-            } else {
-                const ord = document.createElement('span');
-                ord.className = 'ord';
-                ord.textContent = '输入';
-                hd.appendChild(ord);
+            const sel = document.createElement('select');
+            sel.className = 'sel';
+            sel.title = OPS[st.id].kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射';
+            for (const key of Object.keys(OPS)) {
+                const o = document.createElement('option');
+                o.value = key;
+                o.textContent = (OPS[key].kind === 'vector' ? '⧉ ' : '') + OPS[key].label;
+                sel.appendChild(o);
             }
+            sel.value = st.id;
+            sel.addEventListener('change', () => {
+                st.id = sel.value; st.p = {};      // 换算子 → 参数回到该算子的默认值
+                labSync(true);
+            });
+            hd.appendChild(sel);
 
             // 参数 hint：收起后唯一能看到参数的地方
             const opEl = document.createElement('span');
             opEl.className = 'op';
             hd.appendChild(opEl);
 
-            if (st) {
-                const ops = document.createElement('span');
-                ops.className = 'sops';
-                const mkBtn = (txt, title, fn, cls) => {
-                    const b = document.createElement('button');
-                    b.type = 'button'; b.textContent = txt; b.title = title;
-                    if (cls) b.className = cls;
-                    b.addEventListener('click', fn);
-                    ops.appendChild(b);
-                    return b;
-                };
-                mkBtn('↑', '上移一级（改变执行顺序）', () => {
-                    if (k <= 1) return;
-                    [lab.stages[k - 2], lab.stages[k - 1]] = [lab.stages[k - 1], lab.stages[k - 2]];
-                    labSync(true);
-                }).disabled = k === 1;
-                mkBtn('↓', '下移一级（改变执行顺序）', () => {
-                    if (k > last) return;
-                    [lab.stages[k], lab.stages[k - 1]] = [lab.stages[k - 1], lab.stages[k]];
-                    labSync(true);
-                }).disabled = k === last;
-                mkBtn('✕', '删除这一级', () => { lab.stages.splice(k - 1, 1); labSync(true); }, 'del');
-                hd.appendChild(ops);
-            }
+            const ops = document.createElement('span');
+            ops.className = 'sops';
+            const mkBtn = (txt, title, fn, cls) => {
+                const b = document.createElement('button');
+                b.type = 'button'; b.textContent = txt; b.title = title;
+                if (cls) b.className = cls;
+                b.addEventListener('click', fn);
+                ops.appendChild(b);
+                return b;
+            };
+            mkBtn('↑', '上移一级（改变执行顺序）', () => {
+                if (k <= 1) return;
+                [lab.stages[k - 2], lab.stages[k - 1]] = [lab.stages[k - 1], lab.stages[k - 2]];
+                labSync(true);
+            }).disabled = k === 1;
+            mkBtn('↓', '下移一级（改变执行顺序）', () => {
+                if (k > last) return;
+                [lab.stages[k], lab.stages[k - 1]] = [lab.stages[k - 1], lab.stages[k]];
+                labSync(true);
+            }).disabled = k === last;
+            mkBtn('✕', '删除这一级', () => { lab.stages.splice(k - 1, 1); labSync(true); }, 'del');
+            hd.appendChild(ops);
 
             const body = document.createElement('div');
             body.className = 'lcard-body';
-            if (st) {
-                // 参数跟图走：控件在本级卡片里、画布正上方，改完立刻看结果
-                const ctl = document.createElement('div');
-                ctl.className = 'lctl';
-                body.appendChild(ctl);
-                // 只刷 hint 不重建卡片，否则拖动滑杆时焦点/拖拽会被打断
-                buildParams(ctl, OPS[st.id].params.map((s) => ({ ...s, dst: st.p })), () => labSync(false));
-            }
+            // 参数跟图走：控件在本级卡片里、画布正上方，改完立刻看结果
+            const ctl = document.createElement('div');
+            ctl.className = 'lctl';
+            body.appendChild(ctl);
+            // 只刷 hint 不重建卡片，否则拖动滑杆时焦点/拖拽会被打断
+            buildParams(ctl, OPS[st.id].params.map((s) => ({ ...s, dst: st.p })), () => labSync(false));
             const cv = document.createElement('canvas');
             cv.className = 'mx';
             body.appendChild(cv);
@@ -602,22 +645,23 @@
                 hidden: collapsed,                    // 主循环跳过收起的图
             };
             caret.addEventListener('click', () => {
-                if (st) { st.collapsed = !st.collapsed; applyCollapse(ch); labSave(); }
-                else { card.classList.toggle('collapsed'); ch.hidden = card.classList.contains('collapsed'); }
+                st.collapsed = !st.collapsed;
+                applyCollapse(ch);
+                labSave();
                 if (!ch.hidden) ch.w = fitCanvas(cv, LAB_C_H);   // 收起时 display:none 无布局宽度，展开必须重量
                 labelLabCharts();                                 // 收起后头部仍要显示 title + 参数 hint
             });
-            if (!collapsed) ch.w = fitCanvas(cv, LAB_C_H);        // 收起的不测，留 0 等展开时重测
+            if (!collapsed) ch.w = fitCanvas(cv, LAB_C_H);        // 收起的不测宽，留 0 等展开时重测
+            else cv.style.height = LAB_C_H + 'px';                // 但 CSS 高照样定死，避免展开瞬间被 132px 撑一下
             charts.push(ch);      // 塞进同一个列表：主循环自动 compute + draw，无需特判
             labCharts.push(ch);
         }
         labelLabCharts();
     }
-    // 收起态只由各级的 collapsed 决定；输入级(k=0)用卡片自身的 class，不存状态。
+    // 收起态只由各级的 collapsed 决定。
     // 越界保护：labCharts 与 lab.stages 由 rebuildLabCharts 保持同长，
     // 这里再兜一层，避免任何漏 rebuild 的路径把整页打挂（标题刷新是纯展示，不该抛异常）
     function applyCollapse(ch) {
-        if (ch.labK === 0) return;
         const st = lab.stages[ch.labK - 1];
         if (!st) { ch.hidden = true; return; }
         ch.card.classList.toggle('collapsed', !!st.collapsed);
@@ -625,15 +669,14 @@
     }
     // 只刷新 hint / 勾选 / skip 标记，不重建 DOM（拖参数滑杆、启停切换时用）
     function labelLabCharts() {
+        labOut.stages = lab.stages.slice();
         for (const ch of labCharts) {
-            const k = ch.labK;
             applyCollapse(ch);
-            if (k === 0) { ch.opEl.textContent = '1-v（原始反相 SFM）'; ch.card.classList.remove('skip'); continue; }
-            const st = lab.stages[k - 1];
+            const st = lab.stages[ch.labK - 1];
             if (!st) continue;
             const fp = Object.entries(st.p).map(([key, v]) => `${key}=${(+v).toFixed(1)}`).join(',');
             ch.opEl.textContent = fp ? `(${fp})` : '—';
-            if (ch.enEl) ch.enEl.checked = st.on;
+            ch.enEl.checked = st.on;
             ch.card.classList.toggle('skip', !st.on);
         }
     }
