@@ -1184,12 +1184,19 @@
             ],
         });
         if (!ok) return;
+        await removeCmpv(file);
+    }
+    // 真正删一份对比视图（不弹窗）：摘清单 + 删文件；正看着它的话退回列表。
+    // 批量删除走这里，所以确认弹窗留在上面的单份入口里。
+    async function removeCmpv(file) {
+        const name = fileNameOf(file);
         const b = await postDsp('/api/cmpv/' + encodeURIComponent(name), 'DELETE');
-        if (!b) return;
+        if (!b) return false;
         const i = FILES.findIndex((it) => it.file === file);
         if (i >= 0) FILES.splice(i, 1);
         if (OPEN.file === file) open({ file: CMPV_DIR });
         buildTree(); refreshDirty();
+        return true;
     }
     async function saveDspFile(t) {
         const id = stemOf(t.file), e = entryOf(id);
@@ -1495,11 +1502,19 @@
         // 多选状态（Shift / Ctrl）下右键其中任意一行 → 给整批的动作
         if (!isDir && treeSel.size > 1 && treeSel.has(file)) {
             const paths = treeSelPaths();
-            const ids = paths.filter(isDspFile).map(stemOf);
+            const ids = paths.filter((f) => isDspFile(f) && f.endsWith('.json')).map(stemOf);
+            const cmpvs = paths.filter(isCmpvFile);
             const dspPaths = paths.filter((f) => f.endsWith('.json'));
             const batch = [];
             if (dspPaths.length >= 2) batch.push([`创建对比视图（${dspPaths.length} 项）`, '把这些 DSP 写进 content/Compares/ 下的一份 .cmpv，用来并排对比', () => createCompare(dspPaths), '']);
-            if (ids.length) batch.push([`删除选中的 ${ids.length} 条`, '把这些「我的图」连同 content/My dsps/ 下的文件一起删掉', () => deleteCharts(ids), 'danger']);
+            if (ids.length || cmpvs.length) {   // 「我的图」与对比视图都在这一项里删，各自的删法不同
+                const what = [];
+                if (ids.length) what.push(`${ids.length} 条「我的图」`);
+                if (cmpvs.length) what.push(`${cmpvs.length} 份对比视图`);
+                batch.push([`删除选中的 ${ids.length + cmpvs.length} 项`,
+                    `删掉 ${what.join(' + ')}：我的图连文件一起删，对比视图只删自己（被引用的 DSP 不动）`,
+                    () => deleteTreeSelection(ids, cmpvs), 'danger']);
+            }
             if (batch.length) return batch;
         }
         const items = [[isDir ? '打开列表' : (cmpv ? '打开对比' : '预览DSP'),
@@ -1914,13 +1929,18 @@
         removeChart(id);
         if (lostDraft) await ask({ title: '已删除', body: '该条未保存的草稿一并丢弃' + lostDraft, buttons: [{ text: '知道了', cls: 'primary', value: true }] });
     }
-    // 批量删除（树里多选后走这条）：只弹一次确认，逐条 removeChart，最后清空选择
-    async function deleteCharts(ids) {
+    // 批量删除（树里多选后走这条）：只弹一次确认，我的图与对比视图各按自己的删法逐条删，最后清空选择
+    async function deleteTreeSelection(ids, cmpvs) {
         const list = ids.filter((id) => DOC.charts.some((c) => c.id === id));
-        if (!list.length) return;
+        const cmps = cmpvs.filter(isCmpvFile);
+        if (!list.length && !cmps.length) return;
+        const body = [
+            list.length ? '会连 content/My dsps/ 下对应的 .json 一起删掉，未保存的草稿也一并丢弃。' : '',
+            cmps.length ? '对比视图只删这份视图本身，被引用的 DSP 文件不动。' : '',
+        ].filter(Boolean).join('\n');
         const ok = await ask({
-            title: `删除选中的 ${list.length} 条？`,
-            body: '会连 content/My dsps/ 下对应的 .json 一起删掉，未保存的草稿也一并丢弃。',
+            title: `删除选中的 ${list.length + cmps.length} 项？`,
+            body,
             buttons: [
                 { text: '删除', cls: 'danger', value: true },
                 { text: '取消', value: false },
@@ -1928,6 +1948,7 @@
         });
         if (!ok) return;
         for (const id of list) removeChart(id);
+        for (const f of cmps) await removeCmpv(f);
         setTreeSel([]);              // 选中的都删了 → 清空选择
     }
     // 真正执行删除（不弹窗）：从 DOC / 磁盘清单摘掉、删掉文件、必要时退回列表

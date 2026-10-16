@@ -1,6 +1,13 @@
 {
   "v": 1,
-  "charts": [],
+  "charts": [
+    {
+      "id": "u1",
+      "title": "新图",
+      "desc": "",
+      "stages": []
+    }
+  ],
   "view": {
     "paused": [
       "content/Templates/input.json"
@@ -11,11 +18,12 @@
     "openedTabs": [],
     "expanded": [
       "content/Compares/",
-      "content/My dsps/",
-      "content/Templates/",
       "content/Favorates/",
       "content/Recents/",
-      "content/Snapshots/"
+      "content/Snapshots/",
+      "content/ViewState/",
+      "content/Templates/",
+      "content/My dsps/"
     ]
   }
 }
