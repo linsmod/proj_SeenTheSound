@@ -1,4 +1,4 @@
-# mySoundZoneGrid — STS · Seen the Sound（Grid & Charts）
+# STS · Seen the Sound（Grid & Charts）
 
 把**声音看见**：麦克风采到的实时频谱，被分拣成 **12 列（十二平均律音级 C…B）× 9 行（按 MIDI 键位平铺的音区）** 的 88 键网格，每格一个迷你极坐标折线盘，配合右侧的走势 / 总量 / 谱平坦度图表，直观呈现"哪一个音、在哪个八度、亮了多久、有多纯"。
 
