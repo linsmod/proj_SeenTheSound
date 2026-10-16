@@ -599,6 +599,64 @@ def api_doc_post():
     return jsonify({"ok": True, "path": DOC_PATH, "charts": len(body["charts"])})
 
 
+# ---- 模板目录：templates/*.json 的浏览接口（供 matrix.html 左栏树 + 中间视图用） ----
+# 每个文件就是一条独立的 DSP 链：{ title, desc, stages:[{id,on,p}] }，与 matrix-doc.json 里一格同形。
+# 只读接口：模板不参与存档，要改就由前端「从模板新建」克隆进 matrix-doc.json。
+TPL_DIR = os.path.join(HERE, "templates")
+
+
+def _tpl_path(name):
+    """文件名 → 绝对路径；越界（../、子目录、绝对路径）一律拒绝。"""
+    if not name or not name.endswith(".json"):
+        return None
+    if "/" in name or "\\" in name or ".." in name or name.startswith("."):
+        return None
+    p = os.path.abspath(os.path.join(TPL_DIR, name))
+    if os.path.dirname(p) != os.path.abspath(TPL_DIR):
+        return None
+    return p
+
+
+def _tpl_item(name):
+    p = _tpl_path(name)
+    if not p:
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    return {
+        "file": "templates/" + name,
+        "name": name[:-5],
+        "title": d.get("title") if isinstance(d.get("title"), str) else name[:-5],
+        "desc": d.get("desc") if isinstance(d.get("desc"), str) else "",
+        "stages": d.get("stages") if isinstance(d.get("stages"), list) else [],
+    }
+
+
+@app.route("/api/templates")
+def api_templates():
+    """列出 templates/ 下全部 .json。带 title/desc/stages，列表视图与小预览直接可用，不必再逐个取。"""
+    try:
+        names = sorted(n for n in os.listdir(TPL_DIR) if n.endswith(".json"))
+    except FileNotFoundError:
+        names = []
+    items = [_tpl_item(n) for n in names]
+    return jsonify({"dir": "templates/", "templates": [i for i in items if i]})
+
+
+@app.route("/api/templates/<path:name>")
+def api_template_one(name):
+    """取单个模板文件（列表之外的新文件、或前端直接按路径打开时用）。"""
+    item = _tpl_item(name)
+    if not item:
+        return jsonify({"error": "模板不存在或不是合法 JSON"}), 404
+    return jsonify({"template": item})
+
+
 @app.route("/set_smoothing")
 def set_smoothing():
     try:
