@@ -1,1 +1,1 @@
-[{text:'预览',handler:'dsplistview'}]
+[{text:'预览',viewtype:'dsplistview'}]
