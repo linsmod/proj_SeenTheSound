@@ -379,6 +379,12 @@
         ];
     }
     const SEMI_RGB = Array.from({ length: SFM_PC }, (_, i) => oklchRgb(SEMI_L, SEMI_C, i * 30));
+    // 机制视图（content/Views/*）的页面环境：只读常量 + 节拍读取器（不暴露可变状态）
+    window.dspEnv = {
+        CHART_N, SFM_PC, NOTE_NAMES, SEMI_RGB,
+        chartWrite: () => chartWrite,
+        chartSeq: () => chartSeq,
+    };
     // ---------- 管道计算（纯函数区，可独立数值测试） ----------
     // 管道：1-v（反相）→ 按序执行 ch.stages 的每一级 → OUTPUT
     // 变换注册表 OPS —— **由新运行时的 DSPFunctions 派生**（content/Functions/*.js 经 registerFunction 注册），
@@ -810,10 +816,14 @@
 
     // 算一列（绝对下标 idx）：取输入 → DSPRun → 夹紧写回 ch.out
     function runColumn(ch, idx) {
-        const inp = new Float64Array(SFM_PC);        // 旧实现工作区是 Float64，保持同一精度路径
-        const src = srcBufOf(ch.stages);             // 本图自己的源（链里 input 级声明；缺省 = 全局）
-        for (let pc = 0; pc < SFM_PC; pc++) inp[pc] = src[pc * CHART_N + idx];
+        const b = Buffers.get(chartSrcOf(ch.stages));
+        // 有效通道数：vec12 源 = 12；spec.raw 这类 num[] 源 = 当前 bin 数（INPUT 变长，fold 消费）
+        const len = (b.binLen ? Math.min(b.binLen(), b.channels) : b.channels) || b.channels;
+        const inp = new Float64Array(len);           // 旧实现工作区是 Float64，保持同一精度路径
+        const src = b.buf;
+        for (let i = 0; i < len; i++) inp[i] = src[i * CHART_N + idx];
         ch.st.INPUT = inp;
+        ch.st.PC_BINS = pcBins;                      // fold 等算子的音级映射（页面分拣口径，与缓冲共享）
         let r;
         try { r = DSPRun(ch.st); }
         catch (e) { ch.procErr = String((e && e.message) || e); return; }
@@ -1224,7 +1234,7 @@
     // 每条标签 = 一个 pane：自己一块 DOM、自己一批画布、自己一个"在途渲染"代号（token）。
     // 非活跃的 pane 留在 DOM 里但 hidden —— 内容与滚动位置都不丢，画布也一起挂 hidden（主循环跳过，不空算）。
     const HOME_DIR = DIR_TPL;                // 默认落地：出厂预设目录（content/Templates/）
-    const VIEWS = ['dsplistview', 'dspview', 'fnview']; // 白名单：view 名不认识就按 file 形态重推
+    const VIEWS = ['dsplistview', 'dspview', 'fnview', 'bufview']; // 白名单：view 名不认识就按 file 形态重推
     const LIST_C_H = 76, ONE_C_H = 200;      // 列表卡片预览 / 单文件大图各自的画布高
     const treeSel = new Set();               // 树里选中的路径集合（Shift/Ctrl 多选，纯 UI 状态、不进存档）
     let treeAnchor = '';                     // 范围选择的锚点（最近一次普通 / Ctrl 点击的那一行）
@@ -1265,7 +1275,11 @@
     // 空 file = 回默认落地目录（Templates 列表）；以 / 结尾 = 目录列表；.cmpv = 对比视图（同样用卡片列表）；否则 = 单文件链路视图
     function viewerOf(file) {
         if (isFnKey(file)) return 'fnview';      // 算子元数据视图（虚拟叶子，挂在实体 .js 文件下）
-        if (!file || file.endsWith('/') || isCmpvFile(file)) return 'dsplistview';
+        if (file && file.endsWith('/')) {
+            // 目录的视图由 $treeNode.json 的 viewtype 决定（content/Buffers/ = bufview）；没声明 → 列表
+            return dirViewOf(file) || 'dsplistview';
+        }
+        if (isCmpvFile(file)) return 'dsplistview';
         return 'dspview';
     }
     function fileNameOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? file : file.slice(i + 1); }
@@ -1585,6 +1599,9 @@
         if (!p) return;
         for (const ch of p.charts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
         p.charts.length = 0;
+        // 视图自己的生命周期钩子（bufview 等从 Views 注册表挂载的）：摘实例，tick 不再画它
+        const impl = viewImplOf(p.view);
+        if (impl.destroy) impl.destroy(p);
         p.token = ++center.mark;
     }
     // 画布登记进 pane：同时记进主循环的 charts；不是本组活跃标签就先挂 hidden（不 compute / 不 draw）
@@ -1623,6 +1640,19 @@
         fnview: {
             // 算子元数据视图：key = content/Functions/X.js#opId，虚拟叶子挂在实体源码文件下
             mount: (p) => renderFnView(p),
+            isDirty: () => false,
+            confirmClose: () => true,
+        },
+        bufview: {
+            // 缓冲机制视图：content/Views/bufview.js 注册（目录 content/Buffers/ 的 $treeNode.json 指到这里）
+            mount: (p) => {
+                const V = window.Views && Views.get('bufview');
+                p._vi = V ? V.mount(p) : null;
+            },
+            destroy: (p) => {
+                const V = window.Views && Views.get('bufview');
+                if (V && p._vi) { V.destroy(p, p._vi); p._vi = null; }
+            },
             isDirty: () => false,
             confirmClose: () => true,
         },
@@ -3489,13 +3519,41 @@
     });
     document.getElementById('labSave').addEventListener('click', saveDoc);
     document.getElementById('labScratch').addEventListener('click', () => selectChart(SCRATCH_ID));
-    document.getElementById('labAdd').addEventListener('click', () => {
+    document.getElementById('labAdd').addEventListener('click', async () => {
         if (!DRAFT) return;
         const S = DRAFT.stages;
         if (S.length >= MAX_STAGES) return;               // 12 音级 × 250 点，8 级已远超需要
-        const pick = S.length ? S[S.length - 1].id : 'pow';
+        // 算子选择：按类别分组的下拉。旧逻辑只会复制上一级算子 —— input/fold 这类新算子
+        // 从 UI 永远加不进来（只能手改 JSON），注册表里有什么这里就要能选什么。
+        const sel = document.createElement('select');
+        sel.style.cssText = 'width:100%;padding:4px;background:#0e1630;color:#cbeeff;border:1px solid rgba(255,255,255,0.2);border-radius:5px;font-size:12px;';
+        const byCat = new Map();
+        for (const id of Object.keys(OPS)) {
+            const cat = OPS[id].category;
+            if (!byCat.has(cat)) byCat.set(cat, []);
+            byCat.get(cat).push(id);
+        }
+        for (const cat of [...byCat.keys()].sort((a, b) => a.localeCompare(b))) {
+            const og = document.createElement('optgroup');
+            og.label = cat;
+            for (const id of byCat.get(cat)) {
+                const o = document.createElement('option');
+                o.value = id;
+                o.textContent = `${OPS[id].label}（${id}）`;
+                og.appendChild(o);
+            }
+            sel.appendChild(og);
+        }
+        const last = S.length ? S[S.length - 1].id : 'pow';
+        if (OPS[last]) sel.value = last;                  // 预选上一级算子：保持旧快捷路径，少一次点击
+        const ok = await ask({
+            title: `追加第 ${S.length + 1} 级`,
+            bodyNode: sel,
+            buttons: [{ text: '追加', cls: 'primary', value: true }, { text: '取消', value: false }],
+        });
+        if (!ok || !OPS[sel.value]) return;
         // 新增的一级默认收起：它在链中间/末尾但不是"末级默认展开"那条，除非整条链只有它
-        S.push({ id: pick, on: true, p: {}, collapsed: S.length !== 0 });
+        S.push({ id: sel.value, on: true, p: {}, collapsed: S.length !== 0 });
         labSync(true);
     });
     document.getElementById('labClear').addEventListener('click', () => { if (DRAFT) { DRAFT.stages.length = 0; labSync(true); } });
@@ -3542,15 +3600,22 @@
         try { labSync(false); } catch (e) {}   // 右栏开着的 InputSourcePicker 也重解析 options（gate 从置灰到放开）
     }
     // InputSourcePicker 的选项 hook：页面把源清单（含可用性）声明给控件库 —— 控件不认识 /api/sources，只认这个。
-    // 现在的真相源是 Buffers 注册表（inputs() 自带 role/inputShape 过滤），avail() 是各缓冲自己的可用性声明
-    window.dspInputSources = () => Buffers.inputs().map((b) => ({
-        v: b.id, t: b.label,
+    // 收 role=input 的全部（含 spec.raw 变长源，标注区分）；顶栏全局选择器仍只认 vec12（全局默认必须 12 通道）
+    window.dspInputSources = () => Buffers.all().filter((b) => b.role === 'input').map((b) => ({
+        v: b.id,
+        t: b.label + (b.inputShape === 'vec12' ? '' : '（变长）'),
         disabled: !!(b.avail && !b.avail()),
     }));
     async function initInputSel() {
         const sel = document.getElementById('inputSel');
         let meta = null;
         try { meta = await (await fetch('/api/sources', { cache: 'no-store' })).json(); } catch (e) { /* 清单拿不到就只剩占位，不挡主流程 */ }
+        // 对账（Buffers 迁移第 2 步）：服务端目录 ↔ 客户端缓冲注册表，对不上 = 有人改了单边
+        if (meta && window.Buffers) {
+            const sids = new Set((meta.sources || []).map((s) => s.id));
+            for (const b of Buffers.all()) if (!sids.has(b.id)) console.warn('[meta] 缓冲', b.id, '不在 /api/sources 清单里');
+            for (const s of (meta.sources || [])) if (!Buffers.get(s.id)) console.warn('[meta] /api/sources 的', s.id, '没有对应缓冲模块');
+        }
         // 先恢复存档里的选择（保存的时候 gate 可能还开着，这次启动 --no-gate → 回落 SFM）
         inputSrc = (DOC.view && Buffers.get(DOC.view.input)) ? DOC.view.input : 'sfm.matrix';
         for (const s of ((meta && meta.sources) || [])) {
@@ -3610,6 +3675,7 @@
             updateBuffers(dt);
         }
         sfmFillLines();
+        if (window.Views) Views.tick();   // 机制视图（bufview 等）：跟随节拍的仪表自己判断可见性
         // hidden = 右栏里收起的级：画布 display:none，画了也看不见，白算白画
         // paused = 用户按了暂停：冻结在这最后一帧上，连推进都省了
         // 正常状态下每帧每格只推进 0~1 列（chartWrite 20ms 才动一次），不是重算整窗
@@ -3705,7 +3771,7 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r10';
+    const ST_BUILD = 'r12';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);

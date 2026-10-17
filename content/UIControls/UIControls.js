@@ -74,7 +74,8 @@
             key: s.key || s.name,
             label: s.label || s.key || s.name || '?',
             type, widget, min, max, step, fractionDigits,
-            options: Array.isArray(s.options) ? s.options : null,
+            // options：顶层写法或 control 块写法都收（fold.js 用的是后者）——归一后统一从 spec.options 读
+            options: Array.isArray(s.options) ? s.options : (Array.isArray(c.options) ? c.options : null),
             control: c,                                       // 原样带上：滚轮倍率等覆盖项，控件自己读
             def,
         };

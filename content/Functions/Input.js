@@ -20,7 +20,7 @@
 registerFunction({
   id: 'input',
   kind: 'vector',
-  io: { in: 'vec12', out: 'vec12' },
+  io: { in: 'num[]', out: 'num[]' },   // 恒等透传：形状由源决定（vec12 或 spec.raw 的变长 bins），本级不锁
 
   label: '输入源',
   description: '声明本条链从哪个源取数（应放首级；取数由页面按 p.src 做，本级本身恒等）',

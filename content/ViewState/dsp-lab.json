@@ -196,15 +196,12 @@
       "content/Functions/Rescale.js",
       "content/Functions/Inv.js",
       "content/Functions/Log.js",
-      "content/UIControls/DropdownList.js",
-      "content/UIControls/InputSourcePicker.js",
-      "content/UIControls/NumberBox.js",
       "content/Buffers/",
-      "content/Buffers/gate.grid.js",
-      "content/Buffers/sfm.matrix.js",
-      "content/Buffers/spec.fft.js",
+      "content/Views/",
       "content/Buffers/wave.pcm.js",
-      "content/UIControls/"
+      "content/Buffers/spec.fft.js",
+      "content/Buffers/sfm.matrix.js",
+      "content/Buffers/gate.grid.js"
     ],
     "panels": {
       "center": {
@@ -234,11 +231,9 @@
               "content/Snapshots/content_My_dsps_untitled-6.json.json",
               "content/Snapshots/content_My_dsps_untitled-7.json.json",
               "content/Snapshots/content_My_dsps_untitled-8.json.json",
-              "content/Snapshots/content_My_dsps_untitled-9.json.json",
-              "content/Snapshots/content_My_dsps_untitled.json.json",
-              "content/Snapshots/content_Snapshots_content_My_dsps_untitled-3.json.json.json"
+              "content/Snapshots/content_My_dsps_untitled-9.json.json"
             ],
-            "active": "content/UIControls/DropdownList.js#DropdownList",
+            "active": "content/Buffers/sfm.matrix.js#sfm.matrix",
             "size": 1
           }
         ],

@@ -571,6 +571,7 @@ def dsp_lab():
 FUNC_DIR = os.path.join(HERE, "content", "Functions")
 UIC_DIR = os.path.join(HERE, "content", "UIControls")
 BUF_DIR = os.path.join(HERE, "content", "Buffers")
+VIEW_SRC_DIR = os.path.join(HERE, "content", "Views")
 UIC_DIR = os.path.join(HERE, "content", "UIControls")
 
 
@@ -643,6 +644,16 @@ def buf_module(name):
     return resp
 
 
+# 面板视图（bufview 等机制视图）：同上，一个视图一个文件
+@app.route("/content/Views/<path:name>")
+def view_module(name):
+    if not name.lower().endswith(".js"):
+        return jsonify({"ok": False, "error": "only .js is served here"}), 404
+    resp = send_from_directory(VIEW_SRC_DIR, name, mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.route("/stream")
 def stream():
     return Response(sse_stream(CAP, SPEC),
@@ -670,6 +681,13 @@ def _sources_meta():
             "dims": [spec_dim, {"name": "t", "unit": "帧"}],
             "rate": FPS, "shape": "vec12", "status": "live",
             "note": "每帧 FFT → dBFS → 0..255（可 A 计权 + EMA 平滑）；Hz 轴走 payload.freqs(CQT) / binHz(FFT)。DSP 实验室按音级折叠（pcBins 内 u8 均值/255）当链输入",
+        },
+        {
+            "id": "spec.raw", "label": "原始频谱（未折叠）",
+            "iface": "/stream#s", "fmt": "table", "dtype": "u8",
+            "dims": [spec_dim, {"name": "t", "unit": "帧"}],
+            "rate": FPS, "shape": "num[]", "status": "live",
+            "note": "bin 级原始频谱（未折叠），供 fold 算子按任意口径折叠（mean/max 每图自选）；实验室 ring 通道上限 = FFT bin 数",
         },
         {
             "id": "gate.grid", "label": "门控包络(AHDSR)",
@@ -864,7 +882,7 @@ def _dsp_migrate_once():
 
 # ---- content/ 目录树：前端左栏的树据此渲染（目录结构 = 磁盘结构，文件只列 .json） ----
 TREE_NODE_NAME = "$treeNode.json"
-VIEW_NAMES = ("dsplistview", "dspview")     # 与前端 VIEWS 白名单一致
+VIEW_NAMES = ("dsplistview", "dspview", "bufview")   # 与前端 VIEWS 白名单一致
 
 
 def _dir_treenode(dirpath):
@@ -915,12 +933,13 @@ def _content_tree(dirpath, prefix):
             dirs.append(nd)
         elif n.startswith("$"):
             continue                       # $ 开头 = 元数据（$schema / $treeNode），不是内容条目
-        elif n.endswith(".js") and dirpath in (FUNC_DIR, UIC_DIR, BUF_DIR):
-            # 算子 / 控件 / 缓冲的源码都是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
+        elif n.endswith(".js") and dirpath in (FUNC_DIR, UIC_DIR, BUF_DIR, VIEW_SRC_DIR):
+            # 算子 / 控件 / 缓冲 / 视图的源码都是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
             # （前端 mergedTree 按注册表里的 srcFile 归属把模块当虚拟子节点）。
-            # _ 开头是自测件；各目录的运行时核心（Processor/Compile/UIControls/Buffers）不进树。
+            # _ 开头是自测件；各目录的运行时核心不进树。
             core = {"Processor.js", "Compile.js"} if dirpath == FUNC_DIR else \
-                {"UIControls.js"} if dirpath == UIC_DIR else {"Buffers.js"}
+                {"UIControls.js"} if dirpath == UIC_DIR else \
+                {"Buffers.js"} if dirpath == BUF_DIR else {"Views.js"}
             if not n.startswith("_") and n not in core:
                 files.append({"kind": "src", "name": n, "path": prefix + n})
         elif n.endswith(ITEM_EXTS):
