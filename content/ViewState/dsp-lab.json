@@ -198,10 +198,15 @@
       "content/Functions/Log.js",
       "content/Buffers/",
       "content/Views/",
-      "content/Buffers/wave.pcm.js",
-      "content/Buffers/spec.fft.js",
+      "content/ViewState/",
+      "content/UIControls/DropdownList.js",
+      "content/Functions/",
+      "content/Functions/Id.js",
+      "content/Functions/TopK.js",
       "content/Buffers/sfm.matrix.js",
-      "content/Buffers/gate.grid.js"
+      "content/Buffers/spec.fft.js",
+      "content/Compares/",
+      "content/Buffers/wave.pcm.js"
     ],
     "panels": {
       "center": {
@@ -233,7 +238,7 @@
               "content/Snapshots/content_My_dsps_untitled-8.json.json",
               "content/Snapshots/content_My_dsps_untitled-9.json.json"
             ],
-            "active": "content/Buffers/sfm.matrix.js#sfm.matrix",
+            "active": "content/Buffers/wave.pcm.js#wave.pcm",
             "size": 1
           }
         ],

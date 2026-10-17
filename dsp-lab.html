@@ -38,7 +38,7 @@
        三栏常驻、等高、各自内部滚动 —— 不换行、不整页滚（VSCode 的 app shell 语义）。 */
     .wrap { flex: 1 1 auto; min-height: 0; display: flex; gap: 0; align-items: stretch; overflow: hidden; }
     /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着中间面板一起长） */
-    .tree { flex: 0 0 var(--w-tree, 216px); box-sizing: border-box; padding: 6px 6px 8px; background: #0b1226; border: 0; border-radius: 0; overflow-y: auto; scrollbar-gutter: stable; }
+    .tree { flex: 0 0 var(--w-tree, 216px); box-sizing: border-box; padding: 6px 6px 8px; background: #0b1226; border: 0; border-radius: 0; overflow-y: auto;  }
     /* 树 = 磁盘 content/ 的目录结构：每个目录一个 .grp（目录行 + .kids 内容容器），逐层嵌套缩进 */
     .tree > div + div { margin-top: 2px; }
     /* 目录行可展开/收起（VSCode 那套）：三角单独可点，收起时 .kids 整块隐藏（后代目录与文件一起收） */
@@ -71,7 +71,7 @@
        .etop/.erow/.dsc 是编辑头（改标题说明），画布是"当前链的最终结果"，再往下是工具条与逐级卡。 */
     .lab { box-sizing: border-box; background: #0b1226; border: 0; border-radius: 0; display: flex; flex-direction: column; padding: 0 8px 8px; flex: 0 0 var(--w-lab, 372px); min-width: 0; overflow: hidden; position: relative; }
     /* 右栏的滚动区：标签条钉在栏顶（与中栏组头同一条水平线：栏自身不留上内边距），下面这块自己滚 */
-    .lab .lbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; display: flex; flex-direction: column; padding-top: 6px; }
+    .lab .lbody { flex: 1 1 auto; min-height: 0; overflow-y: auto;  display: flex; flex-direction: column; padding-top: 6px; }
     /* 面板之间的拖拽分割条（VSCode 那套）：拖左栏 / 右栏宽度，中间面板自动吃剩余；双击复位。
        命中区 10px（好抓），可见的只是中间 2px 那根线（常态是一条淡分隔线，hover / 拖动时亮成青色）。 */
     .split { position: relative; flex: 0 0 10px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
@@ -181,7 +181,7 @@
     .panegroups { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
     .pgroup { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1 1 0; }   /* relative：标签条的自绘滚动条挂在它身上定位 */
     /* 组体 = 可滚动区：组头（标签条）钉在组顶，内容在下面自己滚 */
-    .pgbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 6px 2px 10px; }
+    .pgbody { flex: 1 1 auto; min-height: 0; overflow-y: auto;  }
     .pgroup.dropin > .panetabs, .pgroup.dropin > .pgbody { outline: 1px dashed rgba(74,224,255,0.45); outline-offset: 2px; border-radius: 4px; }
     .psplit { position: relative; flex: 0 0 10px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
     .psplit::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; background: rgba(255,255,255,0.09); }
@@ -259,7 +259,7 @@
     .dsplist .tdesc { margin-top: 4px; font-size: 11px; line-height: 1.6; color: #8fa2c8; }
     .dsplist .pipe, .dspview .pipe { margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* dspview：单个文件的链路视图 —— 大画布 + 逐级算子 + 入口按钮 */
-    .dspview { background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 8px 10px 10px; }
+    .dspview { background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px;}
     .dspview .vh { font-size: 15px; font-weight: 700; color: #e8eefc; }
     .dspview .vdesc { margin: 4px 0 6px; font-size: 11px; line-height: 1.7; color: #8fa2c8; }
     .dspview .stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -346,6 +346,10 @@
 <script src="/content/Renderers/Renderers.js"></script>
 <script src="/content/Renderers/line.js"></script>
 <script src="/content/Renderers/bars.js"></script>
+<!-- 面板视图（机制可视化 / 默认文本视图）：一个视图一个文件；目录的 $treeNode.json 用 viewtype 指到这里 -->
+<script src="/content/Views/Views.js"></script>
+<script src="/content/Views/bufview.js"></script>
+<script src="/content/Views/textview.js"></script>
 <script>
 (function () {
     'use strict';
@@ -473,6 +477,8 @@
     const SRC_DIRS = [FN_DIR, UIC_DIR, BUF_DIR];
     const isFnKey = (k) => typeof k === 'string' && SRC_DIRS.some((d) => k.startsWith(d)) && k.indexOf('#') > 0;
     const fnIdOf = (k) => k.slice(k.indexOf('#') + 1);
+    // 源码文件本体（无 '#'）：没有绑视图的文件 → 默认文本视图
+    const isSrcFileKey = (k) => typeof k === 'string' && SRC_DIRS.some((d) => k.startsWith(d)) && k.endsWith('.js');
     function isFileKey(k) { return typeof k === 'string' && FILE_KEY_RE.test(k); }
     function dirOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? '' : file.slice(0, i + 1); }
     function stemOf(file) { const i = file.lastIndexOf('/'); const n = i < 0 ? file : file.slice(i + 1); return n.replace(/\.[^./]+$/, ''); }
@@ -516,7 +522,7 @@
             }
             return out.slice(0, 24);
         };
-        const pathOk = (k) => typeof k === 'string' && (isFileKey(k) || isFnKey(k) || (DIR_KEY_RE.test(k) && k !== CONTENT_ROOT));
+        const pathOk = (k) => typeof k === 'string' && (isFileKey(k) || isFnKey(k) || isSrcFileKey(k) || (DIR_KEY_RE.test(k) && k !== CONTENT_ROOT));
         const idOk = (k) => typeof k === 'string' && set.has(k);
         const pIn = (raw.panels && typeof raw.panels === 'object') ? raw.panels : null;
         const cIn = (pIn && pIn.center && typeof pIn.center === 'object') ? pIn.center : null;
@@ -1193,7 +1199,7 @@
         }
         // base 必须用 nd.path（content/Functions/X.js）—— nd.name 只是文件名，
         // 拼出来的 '#'-key 过不了 isFnKey（要以 content/ 开头），会掉进 dspview 拿去当内容文件取。
-        // 一个 src 文件下挂三类虚拟叶子：算子（OPS）/ 参数控件（WIDGETS）/ 数据面缓冲（Buffers）
+        // 一个 src 文件下挂四类虚拟叶子：算子（OPS）/ 控件（WIDGETS）/ 缓冲（Buffers）/ 视图（Views）
         const srcChildren = (name, base) => {
             const out = [];
             for (const id of Object.keys(OPS)) {
@@ -1209,6 +1215,12 @@
                 for (const b of Buffers.all()) {
                     if (b.srcFile !== name) continue;
                     out.push({ kind: 'op', id: b.id, path: base + '#' + b.id, label: b.label + '（缓冲）' });
+                }
+            }
+            if (window.Views) {
+                for (const v of Views.all()) {
+                    if (v.srcFile !== name) continue;
+                    out.push({ kind: 'op', id: v.id, path: base + '#' + v.id, label: v.id + '（视图）' });
                 }
             }
             return out.sort((a, b) => a.id.localeCompare(b.id));
@@ -1234,7 +1246,7 @@
     // 每条标签 = 一个 pane：自己一块 DOM、自己一批画布、自己一个"在途渲染"代号（token）。
     // 非活跃的 pane 留在 DOM 里但 hidden —— 内容与滚动位置都不丢，画布也一起挂 hidden（主循环跳过，不空算）。
     const HOME_DIR = DIR_TPL;                // 默认落地：出厂预设目录（content/Templates/）
-    const VIEWS = ['dsplistview', 'dspview', 'fnview', 'bufview']; // 白名单：view 名不认识就按 file 形态重推
+    const VIEWS = ['dsplistview', 'dspview', 'fnview', 'bufview', 'srcview']; // 白名单：view 名不认识就按 file 形态重推
     const LIST_C_H = 76, ONE_C_H = 200;      // 列表卡片预览 / 单文件大图各自的画布高
     const treeSel = new Set();               // 树里选中的路径集合（Shift/Ctrl 多选，纯 UI 状态、不进存档）
     let treeAnchor = '';                     // 范围选择的锚点（最近一次普通 / Ctrl 点击的那一行）
@@ -1275,6 +1287,7 @@
     // 空 file = 回默认落地目录（Templates 列表）；以 / 结尾 = 目录列表；.cmpv = 对比视图（同样用卡片列表）；否则 = 单文件链路视图
     function viewerOf(file) {
         if (isFnKey(file)) return 'fnview';      // 算子元数据视图（虚拟叶子，挂在实体 .js 文件下）
+        if (isSrcFileKey(file)) return 'srcview';// 源码文件本体：默认文本视图（只读源码）
         if (file && file.endsWith('/')) {
             // 目录的视图由 $treeNode.json 的 viewtype 决定（content/Buffers/ = bufview）；没声明 → 列表
             return dirViewOf(file) || 'dsplistview';
@@ -1656,6 +1669,19 @@
             isDirty: () => false,
             confirmClose: () => true,
         },
+        srcview: {
+            // 默认文本视图：content/Views/textview.js 注册（没有绑视图的源码文件的兜底）
+            mount: (p) => {
+                const V = window.Views && Views.get('srcview');
+                p._vi = V ? V.mount(p) : null;
+            },
+            destroy: (p) => {
+                const V = window.Views && Views.get('srcview');
+                if (V && p._vi) { V.destroy(p, p._vi); p._vi = null; }
+            },
+            isDirty: () => false,
+            confirmClose: () => true,
+        },
     };
     function viewImplOf(name) { return VIEW_IMPL[name] || VIEW_IMPL.dsplistview; }
     // 缓冲卡片：布局/值域/单位 + 角色 + 写入方式 —— 数据面资源的"出厂铭牌"
@@ -1679,6 +1705,22 @@
             d.textContent = [b.unit, b.note].filter(Boolean).join('。');
             host.appendChild(d);
         }
+    }
+    // 面板视图卡片：来源 + 入口指引（视图本体从树目录/标签打开，这里是它的铭牌）
+    function renderViewCard(host, v) {
+        const tags = document.createElement('div');
+        tags.className = 'vtools';
+        const chip = (t) => { const s = document.createElement('span'); s.className = 'st'; s.textContent = t; tags.appendChild(s); };
+        chip('面板视图（Views）');
+        if (v.srcFile) chip('source: content/Views/' + v.srcFile);
+        tags.appendChild(document.createElement('br'));
+        chip('contract: mount(p) → 实例 · tick() 每帧 · destroy(p)');
+        host.appendChild(tags);
+        const d = document.createElement('div');
+        d.className = 'tpl-empty';
+        d.textContent = '视图本体不是在这里看——它挂在某个目录/标签上（如「Buffers 数据面」目录）。'
+            + '这里只是它作为注册表模块的铭牌。';
+        host.appendChild(d);
     }
     // 参数控件卡片：契约（normalizeParam 的 spec + api 句柄）、来源、以及"谁在用我"反查
     function renderCtlView(host, id, ctl) {
@@ -1714,17 +1756,20 @@
         const id = fnIdOf(p.key);
         const op = OPS[id];
         const buf = !op && window.Buffers ? Buffers.get(id) : null;
-        const ctl = !op && !buf && window.UIControls ? UIControls.WIDGETS[id] : null;
+        const view = !op && !buf && window.Views ? Views.get(id) : null;
+        const ctl = !op && !buf && !view && window.UIControls ? UIControls.WIDGETS[id] : null;
         const host = p.el;
         host.textContent = '';
         const head = document.createElement('div');
         head.className = 'st';
         head.textContent = op ? `${op.label || id} · ${id}`
             : (buf ? `${buf.label} · ${id}`
-                : (ctl ? `${id} · 参数控件`
-                    : `${id}（未注册：模块没载入或已改名）`));
+                : (view ? `${id} · 面板视图`
+                    : (ctl ? `${id} · 参数控件`
+                        : `${id}（未注册：模块没载入或已改名）`)));
         host.appendChild(head);
         if (buf) return renderBufView(host, buf);       // 数据面缓冲：Buffers 注册表的元数据
+        if (view) return renderViewCard(host, view);    // 面板视图：Views 注册表的元数据
         if (ctl) return renderCtlView(host, id, ctl);   // 参数控件：UIControls 注册表的元数据
         if (!op) return;
         const tags = document.createElement('div');
@@ -1923,7 +1968,9 @@
         const keep = (k) => (k.endsWith('/') ? dirOpenable(k)
             : (isFnKey(k) ? (!!OPS[fnIdOf(k)]
                 || !!(window.UIControls && UIControls.WIDGETS[fnIdOf(k)])
-                || !!(window.Buffers && Buffers.get(fnIdOf(k)))) : !!itemOf(k)));
+                || !!(window.Buffers && Buffers.get(fnIdOf(k)))
+                || !!(window.Views && Views.get(fnIdOf(k))))
+                : (isSrcFileKey(k) || !!itemOf(k))));   // 源码文件标签保留（文件删了视图里也只是读不到，不炸）
         let changed = false;
         for (const g of center.groups) {
             const left = g.tabs.filter(keep);
@@ -2556,8 +2603,8 @@
         const isSrc = cls === 'src';                       // 算子源码文件：实体节点，可展开虚拟算子叶子
         const canExpand = (isDir || isSrc) && expandable !== false;   // 空目录 / 没注册算子的文件 → 不给三角
         // 目录能不能被"打开"取决于它有没有 $treeNode.json；没有就只是个文件夹（只能展开 / 收起）。
-        // src 文件本身不打开（它没有视图）—— 单击只选中，双击展开元数据。
-        const canOpen = isSrc ? false : (!isDir || dirOpenable(file));
+        // src 文件单击 = 默认文本视图（读源码），双击 = 展开它的算子/控件/缓冲/视图清单。
+        const canOpen = (!isDir || dirOpenable(file));
         if (isDir || isSrc) {
             if (canExpand) {
                 const caret = document.createElement('span');
@@ -2588,7 +2635,7 @@
         row.append(to, tn);
         row.tabIndex = 0;
         row.title = isSrc
-            ? file + '\n算子源码（实体文件）。双击（或点三角）= 展开它注册的算子；单击算子叶子 = 看元数据'
+            ? file + '\n源码文件：单击 = 只读源码；双击（或点三角）= 展开它注册的算子/控件/缓冲/视图'
             : (cls === 'op'
                 ? (() => { const o = OPS[fnIdOf(file)]; return (o ? `${o.label}（${fnIdOf(file)}）\n${o.description || ''}\n` : '') + '单击：打开算子元数据视图'; })()
                 : (isDir
@@ -2624,9 +2671,8 @@
                 toggleDirExpanded(file);
                 return;
             }
-            if (isSrc) {                                   // 源码文件没有视图：单击只选中，元数据在展开里
-                tlog('row.click', ev, '选中（源码文件不打开，双击展开算子清单）');
-                return;
+            if (isSrc) {                                   // 源码文件：打开默认文本视图（元数据在展开里）
+                tlog('row.click', ev, '选中 + 打开源码文本视图');
             }
             tlog('row.click', ev, isDir ? (canOpen ? '选中 + 打开目录' : '选中（目录不可打开，open 会跳过）') : '选中 + 打开文件');
             open({ file });                             // 目录若没有 $treeNode.json，open() 自己忽略 → 等于只选中
@@ -3771,7 +3817,7 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r12';
+    const ST_BUILD = 'r13';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);
