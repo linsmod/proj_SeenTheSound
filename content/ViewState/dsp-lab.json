@@ -11,7 +11,14 @@
       "id": "untitled",
       "title": "untitled",
       "desc": "",
-      "stages": []
+      "stages": [
+        {
+          "id": "lowpass",
+          "on": true,
+          "p": {},
+          "collapsed": false
+        }
+      ]
     },
     {
       "id": "untitled-2",
@@ -148,8 +155,7 @@
       "content/Favorates/",
       "content/Recents/",
       "content/Snapshots/",
-      "content/My dsps/",
-      "content/Templates/"
+      "content/ViewState/"
     ],
     "panels": {
       "center": {
@@ -174,9 +180,10 @@
               "content/My dsps/",
               "content/My dsps/untitled-4.json",
               "content/My dsps/untitled-6.json",
-              "content/Templates/inv.json"
+              "content/Templates/inv.json",
+              "content/ViewState/dsp-lab.json"
             ],
-            "active": "content/Templates/inv.json",
+            "active": "content/ViewState/dsp-lab.json",
             "size": 1
           }
         ],
@@ -187,13 +194,14 @@
           "untitled-3",
           "untitled"
         ],
-        "active": "untitled-3"
+        "active": "untitled"
       }
     },
     "render": {
       "content/My dsps/untitled.json": "line",
       "content/Templates/inv+log+rescale.json": "bars",
-      "content/Templates/inv+pow+rescale.json": "line"
+      "content/Templates/inv+pow+rescale.json": "line",
+      "content/ViewState/dsp-lab.json": "bars"
     }
   }
 }

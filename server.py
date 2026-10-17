@@ -572,6 +572,30 @@ def func_module(name):
     return resp
 
 
+# 算子模块自动合并：content/Functions/*.js 按名序拼成单个文件。
+# 新算子落盘 + 刷新页面即注册，不再需要往 dsp-lab.html 的 <script> 清单里加条目。
+# 排除：_ 开头（_smoke/_equiv 等载入即跑断言的内部件）、Processor/Compile（运行时核心，
+# 顺序敏感，由页面显式先载）。
+@app.route("/content/Functions/all.js")
+def func_bundle():
+    try:
+        names = sorted(n for n in os.listdir(FUNC_DIR)
+                       if n.endswith(".js") and not n.startswith("_")
+                       and n not in ("Processor.js", "Compile.js"))
+    except FileNotFoundError:
+        names = []
+    parts = ["// 自动合并生成（server.py func_bundle）：" + ", ".join(names)]
+    for n in names:
+        try:
+            with open(os.path.join(FUNC_DIR, n), "r", encoding="utf-8") as f:
+                parts.append(f"// ==== {n} ====\n" + f.read().strip())
+        except OSError:
+            continue
+    resp = Response("\n\n".join(parts), mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"      # 合并结果不缓存：改算子/增删文件刷新即生效
+    return resp
+
+
 # 参数控件组件库（NumberBox 等）：与 Functions 同一套"一个文件一个模块"的静态下发
 @app.route("/content/UIControls/<path:name>")
 def uic_module(name):

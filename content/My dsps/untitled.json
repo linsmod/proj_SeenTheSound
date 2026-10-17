@@ -1,5 +1,12 @@
 {
   "title": "untitled",
   "desc": "",
-  "stages": []
+  "stages": [
+    {
+      "id": "lowpass",
+      "on": true,
+      "p": {},
+      "collapsed": false
+    }
+  ]
 }

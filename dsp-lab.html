@@ -302,19 +302,12 @@
         <div class="dlg-f" id="modalFoot"></div>
     </div>
 </div>
-<!-- DSP 处理核心：运行时 → 编译器 → 各算子模块（顺序有意义，模块必须在 Compile.js 之后） -->
+<!-- DSP 处理核心：运行时 → 编译器（顺序敏感，显式先载）；
+     算子模块由 /content/Functions/all.js 自动合并（服务端扫 content/Functions/*.js，
+     排除 _* 与运行时核心）—— 新算子落盘 + 刷新即注册，不再需要手动维护脚本清单 -->
 <script src="/content/Functions/Processor.js"></script>
 <script src="/content/Functions/Compile.js"></script>
-<script src="/content/Functions/Id.js"></script>
-<script src="/content/Functions/Inv.js"></script>
-<script src="/content/Functions/Log.js"></script>
-<script src="/content/Functions/Log01.js"></script>
-<script src="/content/Functions/Pow.js"></script>
-<script src="/content/Functions/Rank.js"></script>
-<script src="/content/Functions/Rescale.js"></script>
-<script src="/content/Functions/Tanh.js"></script>
-<script src="/content/Functions/Zscore.js"></script>
-<script src="/content/Functions/TopK.js"></script>
+<script src="/content/Functions/all.js"></script>
 <!-- 参数控件组件库：契约（normalizeParam）→ 各控件（一个文件一个控件）；必须在 inline 之前 -->
 <script src="/content/UIControls/UIControls.js"></script>
 <script src="/content/UIControls/NumberBox.js"></script>
@@ -370,6 +363,9 @@
             label: mod.label || mod.id,
             kind: mod.kind === 'vector' ? 'vector' : (mod.kind === 'scalar' ? 'scalar' : (mod.kind || 'plain')),
             plain: mod.kind === 'plain' || mod.kind === 'sink',
+            // 需要帧状态（fs）→ 旧整窗路径不可执行。自动检测：f 的源码里引用了 fs 参数
+            // （声明了 fs 形参的函数，其源码必含 \bfs\b）；mod.needsFs 可显式强制。
+            needsFs: !!mod.needsFs || (typeof mod.f === 'function' && /\bfs\b/.test(String(mod.f))),
             f: (typeof mod.f === 'function') ? mod.f : null,
             params: (mod.paramSchema || []).map((s) => UIControls.normalizeParam(s)),
             category: mod.category || '其他',
@@ -3300,8 +3296,10 @@
     // 控制台敲 dspSelfTest() 随时重跑；页面加载后约 6 秒自动跑一次（那时已收满一整窗）。
     function selfTestChart(ch) {
         const stages = (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} }));
-        // plain/sink（如 topk）没有纯函数 f，旧整窗路径算不了 → 这条链只能靠新运行时自己，跳过比对
-        if (!stages.every((s) => OPS[s.id] && OPS[s.id].f)) return { err: '含 plain/sink 算子：旧路径不可比，跳过' };
+        // plain/sink 没有 f、needsFs 需要 fs —— 两种算子旧整窗路径都执行不了 → 跳过比对
+        const oldPathOk = (s) => OPS[s.id] && OPS[s.id].f && !OPS[s.id].needsFs;
+        if (!stages.every((s) => oldPathOk(s)))
+            return { err: '含 plain/sink 或跨帧状态算子：旧路径不可比，跳过' };
         const oldOut = new Float32Array(SFM_PC * CHART_N);
         computeChart({ out: oldOut, stages }, sfmLines);   // 旧路径（复用 pipeTmp；同步执行，打完即回）
 
@@ -3394,7 +3392,7 @@
                 stepChart(ch);   // 先同步追平：别把"刚切过来、还没跑一帧"当成不一致
                 if (!ch.proc) continue;
                 const stages = (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} }));
-                if (!stages.every((s) => OPS[s.id] && OPS[s.id].f)) continue;   // plain/sink：旧路径不可比，跳过
+                if (!stages.every((s) => OPS[s.id] && OPS[s.id].f && !OPS[s.id].needsFs)) continue;   // 旧路径不可比：跳过
                 const ref = new Float32Array(SFM_PC * CHART_N);
                 computeChart({ out: ref, stages }, sfmLines);
 
