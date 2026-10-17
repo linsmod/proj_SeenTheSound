@@ -453,9 +453,12 @@
     const CONTENT_ROOT = 'content/';     // 内容根（= ROOT）：显示路径时省略这段前缀，content 本身不写出来
     const FILE_KEY_RE = /^content\/(?:[^/]+\/)*[^/]+\.(?:json|cmpv)$/;
     const DIR_KEY_RE = /^content\/(?:[^/]+\/)*$/;
-    // 算子源码文件（实体）与其下的虚拟算子叶子：key 形如 content/Functions/Lowpass.js#lowpass
+    // 注册表源码文件（实体）与其下的虚拟叶子：key 形如 content/Functions/Lowpass.js#lowpass。
+    // 两个注册表同一套玩法：Functions（算子，OPS）/ UIControls（参数控件，WIDGETS）
     const FN_DIR = 'content/Functions/';
-    const isFnKey = (k) => typeof k === 'string' && k.startsWith(FN_DIR) && k.indexOf('#') > 0;
+    const UIC_DIR = 'content/UIControls/';
+    const SRC_DIRS = [FN_DIR, UIC_DIR];
+    const isFnKey = (k) => typeof k === 'string' && SRC_DIRS.some((d) => k.startsWith(d)) && k.indexOf('#') > 0;
     const fnIdOf = (k) => k.slice(k.indexOf('#') + 1);
     function isFileKey(k) { return typeof k === 'string' && FILE_KEY_RE.test(k); }
     function dirOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? '' : file.slice(0, i + 1); }
@@ -485,7 +488,8 @@
         if (Array.isArray(raw.expanded)) {
             // 目录 + 算子源码文件的展开态（实体 .js 节点下面挂的是虚拟算子叶子）
             v.expanded = raw.expanded.filter((d) => typeof d === 'string'
-                && ((DIR_KEY_RE.test(d) && d !== 'content/') || (d.startsWith(FN_DIR) && d.endsWith('.js'))));
+                && ((DIR_KEY_RE.test(d) && d !== 'content/')
+                    || (SRC_DIRS.some((x) => d.startsWith(x)) && d.endsWith('.js'))));
         }
         // 链输入源：只认注册表里有的（INPUT_SRC 在下方定义，调用发生在脚本求值后，没问题）
         if (typeof raw.input === 'string' && INPUT_SRC[raw.input]) v.input = raw.input;
@@ -1232,12 +1236,18 @@
             });
         }
         // base 必须用 nd.path（content/Functions/X.js）—— nd.name 只是文件名，
-        // 拼出来的 '#'-key 过不了 isFnKey（要以 content/ 开头），会掉进 dspview 拿去当内容文件取
-        const srcOps = (name, base) => {
+        // 拼出来的 '#'-key 过不了 isFnKey（要以 content/ 开头），会掉进 dspview 拿去当内容文件取。
+        // 一个 src 文件下挂两类虚拟叶子：算子（OPS.srcFile）与参数控件（WIDGETS.srcFile）
+        const srcChildren = (name, base) => {
             const out = [];
             for (const id of Object.keys(OPS)) {
                 if (OPS[id].srcFile !== name) continue;
                 out.push({ kind: 'op', id, path: base + '#' + id, label: OPS[id].label || id });
+            }
+            const W = (window.UIControls && UIControls.WIDGETS) || {};
+            for (const nm of Object.keys(W)) {
+                if (W[nm].srcFile !== name) continue;
+                out.push({ kind: 'op', id: nm, path: base + '#' + nm, label: nm + '（控件）' });
             }
             return out.sort((a, b) => a.id.localeCompare(b.id));
         };
@@ -1245,7 +1255,7 @@
             const out = [];
             for (const nd of nodes) {
                 if (nd.kind === 'dir') out.push({ ...nd, children: build(nd.children || [], nd.path) });
-                else if (nd.kind === 'src') out.push({ kind: 'src', name: nd.name, path: nd.path, ops: srcOps(nd.name, nd.path) });
+                else if (nd.kind === 'src') out.push({ kind: 'src', name: nd.name, path: nd.path, ops: srcChildren(nd.name, nd.path) });
             }
             const files = (byDir.get(prefix) || []).sort((a, b) => a.path.localeCompare(b.path));
             return out.concat(files);
@@ -1313,8 +1323,9 @@
     // 标签标题：目录取末段，文件优先用磁盘条目里的标题，取不到退回文件名（stem）
     function docTitle(key) {
         if (isFnKey(key)) {
-            const op = OPS[fnIdOf(key)];
-            return op ? `${op.label || fnIdOf(key)}（算子）` : fnIdOf(key);
+            const id = fnIdOf(key);
+            const op = OPS[id];
+            return op ? `${op.label || id}（算子）` : (fnIdOf(key));
         }
         if (key.endsWith('/')) {
             const m = DIR_META.get(key);              // 目录标题与树上一致：描述符给了 text 就听它的
@@ -1663,18 +1674,49 @@
         },
     };
     function viewImplOf(name) { return VIEW_IMPL[name] || VIEW_IMPL.dsplistview; }
+    // 参数控件卡片：契约（normalizeParam 的 spec + api 句柄）、来源、以及"谁在用我"反查
+    function renderCtlView(host, id, ctl) {
+        const tags = document.createElement('div');
+        tags.className = 'vtools';
+        const chip = (t) => { const s = document.createElement('span'); s.className = 'st'; s.textContent = t; tags.appendChild(s); };
+        chip('UI 控件（UIControls.WIDGETS）');
+        if (ctl.srcFile) chip('source: ' + UIC_DIR + ctl.srcFile);
+        tags.appendChild(document.createElement('br'));
+        chip('contract: (spec, api) → { el, refresh }');
+        host.appendChild(tags);
+        const d = document.createElement('div');
+        d.className = 'tpl-empty';
+        d.textContent = 'api = { get(), commit(v), ctx() }；spec 是 normalizeParam 的产物（paramSchema 声明经 control.type 选中本控件）。'
+            + 'fn 边界 / fn options 在控件重建时求值一次，静态存档清洗跳过 fn。';
+        host.appendChild(d);
+        // 反查：哪些算子的哪个参数在用这个控件
+        const users = [];
+        for (const oid of Object.keys(OPS)) {
+            for (const sp of OPS[oid].params) {
+                if (sp.widget === id) users.push(`${oid}.${sp.key}`);
+            }
+        }
+        const u = document.createElement('div');
+        u.className = 'tpl-empty';
+        u.textContent = users.length ? `被用作参数控件：${users.join('、')}` : '当前没有任何算子引用这个控件（仍可被 paramSchema 的 control.type 选用）。';
+        host.appendChild(u);
+    }
     // ---------- 算子元数据视图（fnview）----------
     // 回答"这一级是什么、吃什么吐什么、占什么"：参数 schema、私有工作区（state 声明）、
     // 多输出端口、兼容性（needsFs）。数据全部来自 OPS 注册表 —— 算子自己声明，这里只负责摆出来。
     function renderFnView(p) {
         const id = fnIdOf(p.key);
         const op = OPS[id];
+        const ctl = !op && window.UIControls ? UIControls.WIDGETS[id] : null;
         const host = p.el;
         host.textContent = '';
         const head = document.createElement('div');
         head.className = 'st';
-        head.textContent = op ? `${op.label || id} · ${id}` : `${id}（未注册：模块没载入或已改名）`;
+        head.textContent = op ? `${op.label || id} · ${id}`
+            : (ctl ? `${id} · 参数控件`
+                : `${id}（未注册：模块没载入或已改名）`);
         host.appendChild(head);
+        if (ctl) return renderCtlView(host, id, ctl);   // 参数控件：UIControls 注册表的元数据
         if (!op) return;
         const tags = document.createElement('div');
         tags.className = 'vtools';
@@ -1869,7 +1911,8 @@
     function pruneCenter() {
         if (!FILES.length) return;
         // 目录标签也要看它还有没有 $treeNode.json：描述符被删掉 = 它退回纯文件夹，标签一并摘掉
-        const keep = (k) => (k.endsWith('/') ? dirOpenable(k) : (isFnKey(k) ? !!OPS[fnIdOf(k)] : !!itemOf(k)));
+        const keep = (k) => (k.endsWith('/') ? dirOpenable(k)
+            : (isFnKey(k) ? (!!OPS[fnIdOf(k)] || !!(window.UIControls && UIControls.WIDGETS[fnIdOf(k)])) : !!itemOf(k)));
         let changed = false;
         for (const g of center.groups) {
             const left = g.tabs.filter(keep);

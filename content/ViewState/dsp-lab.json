@@ -182,40 +182,32 @@
       "content/Compares/",
       "content/Favorates/",
       "content/Recents/",
-      "content/ViewState/",
-      "content/Templates/",
       "content/Functions/Log01.js",
       "content/Functions/Lowpass.js",
       "content/Functions/Pow.js",
       "content/Functions/Rank.js",
       "content/Functions/Rescale.js",
-      "content/Functions/Log.js",
       "content/Functions/Inv.js",
-      "content/Functions/Input.js",
-      "content/Functions/Id.js",
-      "content/Functions/"
+      "content/Functions/Log.js",
+      "content/ViewState/",
+      "content/Templates/",
+      "content/UIControls/",
+      "content/UIControls/DropdownList.js",
+      "content/UIControls/InputSourcePicker.js",
+      "content/UIControls/NumberBox.js"
     ],
     "panels": {
       "center": {
         "groups": [
           {
             "tabs": [
-              "content/Templates/input.json",
-              "content/Templates/inv.json",
-              "content/My dsps/",
               "content/My dsps/u1.json",
               "content/Templates/",
-              "content/My dsps/InputSwitch.json",
-              "content/Functions/Id.js#id",
-              "content/Functions/Input.js#input",
-              "content/Functions/Inv.js#inv",
-              "content/Functions/Lowpass.js#lowpass",
-              "content/Functions/Pow.js#pow",
-              "content/Functions/Rank.js#rank",
-              "content/Functions/Rescale.js#rescale",
-              "content/Snapshots/content_My_dsps_untitled-3.json.json"
+              "content/UIControls/DropdownList.js#DropdownList",
+              "content/UIControls/InputSourcePicker.js#InputSourcePicker",
+              "content/UIControls/NumberBox.js#NumberBox"
             ],
-            "active": "content/Templates/",
+            "active": "content/UIControls/NumberBox.js#NumberBox",
             "size": 1
           }
         ],
@@ -234,7 +226,7 @@
     "render": {
       "content/My dsps/InputSwitch.json": "line",
       "content/My dsps/untitled.json": "line",
-      "content/Templates/inv+log+rescale.json": "bars",
+      "content/Templates/inv+log+rescale.json": "line",
       "content/Templates/inv+pow+rescale.json": "line",
       "content/ViewState/dsp-lab.json": "bars"
     },

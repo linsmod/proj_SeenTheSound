@@ -570,6 +570,7 @@ def dsp_lab():
 # send_from_directory 自带路径穿越防护（../ 一律 404）。
 FUNC_DIR = os.path.join(HERE, "content", "Functions")
 UIC_DIR = os.path.join(HERE, "content", "UIControls")
+UIC_DIR = os.path.join(HERE, "content", "UIControls")
 
 
 @app.route("/content/Functions/<path:name>")
@@ -903,11 +904,12 @@ def _content_tree(dirpath, prefix):
             dirs.append(nd)
         elif n.startswith("$"):
             continue                       # $ 开头 = 元数据（$schema / $treeNode），不是内容条目
-        elif n.endswith(".js") and dirpath == FUNC_DIR:
-            # Functions 的源码也是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
-            # （前端 mergedTree 会把注册表里 srcFile 归属此文件的算子当虚拟子节点）。
-            # _ 开头是自测件、Processor/Compile 是运行时核心，都不是算子模块，不进树。
-            if not n.startswith("_") and n not in ("Processor.js", "Compile.js"):
+        elif n.endswith(".js") and dirpath in (FUNC_DIR, UIC_DIR):
+            # 算子 / 控件的源码都是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
+            # （前端 mergedTree 按注册表里的 srcFile 归属把模块当虚拟子节点）。
+            # _ 开头是自测件；Processor/Compile/UIControls 是各注册表的运行时核心，不进树。
+            core = ("Processor.js", "Compile.js") if dirpath == FUNC_DIR else ("UIControls.js",)
+            if not n.startswith("_") and n not in core:
                 files.append({"kind": "src", "name": n, "path": prefix + n})
         elif n.endswith(ITEM_EXTS):
             item = _dir_item(dirpath, prefix, n)

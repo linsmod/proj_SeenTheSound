@@ -25,6 +25,12 @@
 
     UIControls.registerControl = function (name, factory) {
         if (typeof factory !== 'function') throw new Error('registerControl: ' + name + ' 需要工厂函数');
+        // 来源归属：控件文件是逐个 <script> 同步载入的，currentScript 就是"现在这份"——
+        // 元数据视图 / 树的虚拟叶子靠它把"控件 → 住在哪个 .js"对上号（与 Functions 的 DSP_SRC_FILE 等价）
+        try {
+            const cs = document.currentScript;
+            factory.srcFile = (cs && cs.src) ? cs.src.split('/').pop() : '';
+        } catch (e) { factory.srcFile = ''; }
         UIControls.WIDGETS[name] = factory;
     };
 
