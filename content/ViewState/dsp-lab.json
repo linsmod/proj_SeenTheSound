@@ -68,7 +68,7 @@
     },
     {
       "id": "untitled-4",
-      "title": "原始 SFM 数据",
+      "title": "输入源接入",
       "desc": "",
       "stages": []
     },
@@ -96,7 +96,7 @@
     },
     {
       "id": "untitled-6",
-      "title": "原始 SFM 数据 副本",
+      "title": "输入源接入 副本",
       "desc": "",
       "stages": []
     },
@@ -146,19 +146,19 @@
     },
     {
       "id": "untitled-9",
-      "title": "原始 SFM 数据 副本",
+      "title": "输入源接入 副本",
       "desc": "",
       "stages": []
     },
     {
       "id": "untitled-10",
-      "title": "原始 SFM 数据 副本",
+      "title": "输入源接入 副本",
       "desc": "",
       "stages": []
     },
     {
       "id": "InputSwitch",
-      "title": "原始 SFM 数据 副本",
+      "title": "输入源接入 副本",
       "desc": "",
       "stages": [
         {
@@ -194,7 +194,8 @@
       "content/UIControls/",
       "content/UIControls/DropdownList.js",
       "content/UIControls/InputSourcePicker.js",
-      "content/UIControls/NumberBox.js"
+      "content/UIControls/NumberBox.js",
+      "content/My dsps/"
     ],
     "panels": {
       "center": {
@@ -205,9 +206,12 @@
               "content/Templates/",
               "content/UIControls/DropdownList.js#DropdownList",
               "content/UIControls/InputSourcePicker.js#InputSourcePicker",
-              "content/UIControls/NumberBox.js#NumberBox"
+              "content/UIControls/NumberBox.js#NumberBox",
+              "content/My dsps/",
+              "content/My dsps/InputSwitch.json",
+              "content/My dsps/untitled-10.json"
             ],
-            "active": "content/UIControls/NumberBox.js#NumberBox",
+            "active": "content/My dsps/InputSwitch.json",
             "size": 1
           }
         ],
@@ -220,7 +224,7 @@
           "untitled-9",
           "InputSwitch"
         ],
-        "active": "untitled-3"
+        "active": "InputSwitch"
       }
     },
     "render": {

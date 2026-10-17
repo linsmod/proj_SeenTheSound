@@ -929,12 +929,19 @@
     }
     // 管道摘要（图标题下方等宽小字，参数/顺序/启用状态改动即时刷新）
     // vector 级加花括号标出（整条链的跨音级断点），停用级用删除线标出（不参与执行）
+    // 级参数 → "k=v,k=v" 串：数字一位小数，字符串原样（input 的 src 是第一个字符串参数，
+    // 三处显示共用：管道摘要 / 中栏级联卡 / 右栏级联卡——别再各自写 (+v).toFixed(1) 造 NaN）
+    function fmtParams(p) {
+        return Object.entries(p || {})
+            .map(([k, v]) => `${k}=${(typeof v === 'number' && isFinite(v)) ? (+v).toFixed(1) : String(v)}`)
+            .join(',');
+    }
     function pipeSummary(ch) {
         if (!ch.stages.length) return '原始 SFM → OUTPUT';   // 0 号输入：stages 为空 = 不做任何变换
         const parts = [];
         for (const st of ch.stages) {
             const op = OPS[st.id];
-            const fp = Object.entries(st.p).map(([k, v]) => `${k}=${(+v).toFixed(1)}`).join(',');
+            const fp = fmtParams(st.p);
             const txt = fp ? `${op.label}(${fp})` : op.label;
             const wrapped = op.kind === 'vector' ? `{${txt}}` : (op.plain ? `⟨${txt}⟩` : `[${txt}]`);
             parts.push(st.on ? wrapped : `~~${txt}~~`);
@@ -1997,7 +2004,7 @@
         host.appendChild(foot);
         ch.pbar = pbar; ch.playBtn = playBtn;
         buildParams(pbar, chartParamSpecs(ch), () => {
-            ch.pipeEl.textContent = pipeSummary(ch);
+            if (ch.pipeEl) ch.pipeEl.textContent = pipeSummary(ch);   // 大图没有摘要行了（与级联卡重复）；列表卡还有
             // 我的图的参数是直接改 DOC 那一格的（成品改动）→ 状态位要报"未落盘"，等「保存」写回文件
             if (isDspFile(t.file)) refreshDirty();
         }, () => ({ input: Array.from({ length: SFM_PC }, (_, pc) => srcBufOf(ch.stages)[pc * CHART_N + chartWrite]) }));
@@ -2160,14 +2167,15 @@
         const nf = document.createElement('div'); nf.className = 'vfile'; nf.textContent = file;
         const vh = document.createElement('div'); vh.className = 'vh'; vh.textContent = t.title;
         const vd = document.createElement('div'); vd.className = 'vdesc'; vd.textContent = t.desc || '（无说明）';
-        const pp = document.createElement('div'); pp.className = 'pipe'; pp.textContent = pipeSummary({ stages });
+        // 管道摘要不进大图：下面的级联卡逐级带同名参数（① 输入源(src=…)），再放一行整链摘要是纯重复。
+        // 列表卡片没有级联卡，摘要保留在那里。
         const cv = document.createElement('canvas'); cv.className = 'mx';
         const stbox = document.createElement('div'); stbox.className = 'stages';
         stages.forEach((s, i) => {
             const chip = document.createElement('span');
             chip.className = 'st' + (s.on ? '' : ' off');
             const op = OPS[s.id];
-            const fp = Object.entries(s.p).map(([k, v]) => `${k}=${(+v).toFixed(1)}`).join(',');
+            const fp = fmtParams(s.p);
             chip.textContent = `${ordLabel(i + 1)} ${op.label}${fp ? '(' + fp + ')' : ''}`
                 + `${op.kind === 'vector' ? ' ⧉' : (op.plain ? ' ◇' : '')}`;
             chip.title = (op.plain ? '自管输入输出（plain/sink）' : (op.kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射'))
@@ -2195,10 +2203,10 @@
         mk('✕ 关闭', '回到默认目录列表（content/Templates/）', () => open({ file: '' }));
         const ch = {
             file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
-            cv, ctx: cv.getContext('2d'), pipeEl: pp, card: host, isView: true,
+            cv, ctx: cv.getContext('2d'), pipeEl: null, card: host, isView: true,
             render: renderOf(file),
         };
-        host.append(nf, vh, vd, pp, cv);
+        host.append(nf, vh, vd, cv);
         buildFileFoot(host, t, ch);       // 参数条 + 播放/还原：与列表卡片同一套
         host.append(stbox, tools);
         ch.w = fitCanvas(cv, ONE_C_H);
@@ -3475,7 +3483,7 @@
             applyCollapse(ch);
             const st = ch.stagesRef[ch.labK - 1];
             if (!st) continue;
-            const fp = Object.entries(st.p).map(([key, v]) => `${key}=${(+v).toFixed(1)}`).join(',');
+            const fp = fmtParams(st.p);
             ch.opEl.textContent = fp ? `(${fp})` : '—';
             ch.enEl.checked = st.on;
             ch.card.classList.toggle('skip', !st.on);

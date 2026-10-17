@@ -67,6 +67,9 @@ TopK.paramSchema = [
 ];
 
 // 东南西北 ESWN 四边
+// XY绝对位置 eg. X30Y120
+// TLRB绝对位置 eg. T120L30
+// 相对于底边 eg. T120L30,F1B,
 TopK.copyOutSchema = {
     dupRest: {
         defaultPin: 'dsppin-S0',
