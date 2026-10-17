@@ -2426,7 +2426,7 @@
         }
         return out;
     }
-    // 文件行的菜单：目录行只有「打开列表」；文件行按目录给不同的动作
+    // 右键菜单：目录行只有管理动作（打开走左键）；文件行按目录给不同的动作
     //   只读文件（content/Templates/ 等）→ 从模板新建（只能克隆出自己的一条）
     //   我的图（content/My dsps/）        → 编辑 / 复制 / 删除（自己的文件，可改可删）
     //   两种行都还能由上面的 FOLDER / FILE 注册表再挂项（如「我的图」目录行上的「新建 DSP」）
@@ -2452,9 +2452,9 @@
             }
             if (batch.length) return batch;
         }
-        const items = [[isDir ? '打开列表' : (cmpv ? '打开对比' : '预览DSP'),
-            isDir ? file + ' 的列表视图（dsplistview）'
-                : (cmpv ? `打开 ${file}（卡片列表对比）` : `打开 ${file} 的链路视图（dspview）`),
+        // 目录不再给"打开列表"：左键已经把"打开 + 展开/收起"处理完了，右键只留管理动作
+        const items = isDir ? [] : [[cmpv ? '打开对比' : '预览DSP',
+            cmpv ? `打开 ${file}（卡片列表对比）` : `打开 ${file} 的链路视图（dspview）`,
             () => open({ file }), '']];
         const extra = contributedItems(isDir ? 'folder' : 'file', file);   // 注册进来的项夹在「打开」与内置管理动作之间
         const own = [];
@@ -2531,11 +2531,33 @@
             fetch(shotUrlOf(k), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ data }),
+                body: JSON.stringify({ data, meta: shotMetaOf(ch) }),
             }).catch(() => {});     // 落盘失败只影响这张图；存档里的暂停状态照样有效
             return true;
         } catch (e) { /* toDataURL 失败（极端情况下画布不可导出）就不存，只保留暂停状态 */ }
         return false;
+    }
+    // 与 PNG 成对落盘的数据：就是画这块画布时用的那份 ring（ch.out），
+    // 索引 out[音级 * CHART_N + 列]，列 = 窗口内第几帧（0 = 最旧）。
+    // 再带上链与窗口参数 —— 事后拿这份 JSON 就能把图上的每一格对回具体数值。
+    function shotMetaOf(ch) {
+        const q = (v) => Math.round(v * 1e6) / 1e6;      // 6 位小数足够画图，文件也小一半
+        const out = new Array(SFM_PC * CHART_N);
+        for (let i = 0; i < out.length; i++) out[i] = q(ch.out[i]);
+        return {
+            key: keyOf(ch),
+            file: ch.file || '',
+            stages: (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} })),
+            rows: SFM_PC,
+            cols: CHART_N,
+            notes: NOTE_NAMES.slice(),
+            layout: 'out[pc * cols + col]',
+            chartWrite,
+            chartSeq,
+            sfmWinK,
+            capturedAt: new Date().toISOString(),
+            out,
+        };
     }
     function dropShotFile(key) {
         fetch(shotUrlOf(key), { method: 'DELETE' }).catch(() => {});
