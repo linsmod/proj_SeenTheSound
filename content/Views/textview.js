@@ -33,7 +33,8 @@
                     bar.textContent = p.key;
                     const lines = txt.replace(/\t/g, '    ').replace(/\r\n/g, '\n').split('\n');
                     const wrap = document.createElement('div');
-                    wrap.style.cssText = 'display:flex;align-items:flex-start;gap:0;background:#0a1022;border:1px solid rgba(255,255,255,0.10);border-radius:6px;overflow:auto;max-height:100%;';
+                    wrap.setAttribute('data-scroller', '');   // 页面据此把滚动捕获/还原接到这个容器上
+                    wrap.style.cssText = 'flex:1 1 auto;min-height:0;display:flex;align-items:flex-start;gap:0;background:#0a1022;border:1px solid rgba(255,255,255,0.10);border-radius:6px;overflow:auto;';
                     const gut = document.createElement('div');
                     gut.style.cssText = 'flex:none;padding:8px 6px;text-align:right;color:#5a6c94;font-family:Consolas,monospace;font-size:12px;line-height:1.45;white-space:pre;user-select:none;border-right:1px solid rgba(255,255,255,0.08);';
                     gut.textContent = lines.map((_, i) => i + 1).join('\n');

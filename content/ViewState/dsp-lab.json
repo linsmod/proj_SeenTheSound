@@ -222,9 +222,10 @@
               "content/Compares/untitled.cmpv",
               "content/Compares/",
               "content/Buffers/wave.pcm.js#wave.pcm",
-              "content/Buffers/spec.raw.js"
+              "content/Buffers/spec.raw.js",
+              "content/Buffers/spec.fft.js#spec.fft"
             ],
-            "active": "content/Buffers/spec.raw.js",
+            "active": "content/Buffers/wave.pcm.js",
             "size": 1
           }
         ],
@@ -247,9 +248,6 @@
       "content/Templates/inv+pow+rescale.json": "line",
       "content/ViewState/dsp-lab.json": "bars"
     },
-    "input": "sfm.matrix",
-    "scrolls": {
-      "content/Buffers/spec.raw.js": 129.60000610351562
-    }
+    "input": "sfm.matrix"
   }
 }
