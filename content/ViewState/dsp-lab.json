@@ -66,30 +66,36 @@
       "content/Favorates/",
       "content/Recents/",
       "content/Snapshots/",
-      "content/ViewState/",
       "content/Templates/",
       "content/My dsps/"
     ],
     "panels": {
       "center": {
-        "tabs": [
-          "content/Templates/",
-          "content/My dsps/u1.json",
-          "content/My dsps/untitled.json",
-          "content/Templates/$schema.json",
-          "content/Templates/input.json",
-          "content/Templates/inv+zscore.json",
-          "content/Templates/inv+rescale+tanh.json",
-          "content/Templates/inv+rescale+pow.json",
-          "content/Templates/inv+rescale+log01.json",
-          "content/Templates/inv+rescale.json",
-          "content/Templates/inv+rank.json",
-          "content/Templates/inv+log+rescale.json",
-          "content/Templates/inv+pow+rescale.json",
-          "content/My dsps/untitled-2.json",
-          "content/My dsps/untitled-3.json"
+        "groups": [
+          {
+            "tabs": [
+              "content/Templates/",
+              "content/My dsps/u1.json",
+              "content/My dsps/untitled.json",
+              "content/Templates/input.json",
+              "content/Templates/inv+zscore.json",
+              "content/Templates/inv+rescale+tanh.json",
+              "content/Templates/inv+rescale+pow.json",
+              "content/Templates/inv+rescale+log01.json",
+              "content/Templates/inv+rescale.json",
+              "content/Templates/inv+rank.json",
+              "content/Templates/inv+log+rescale.json",
+              "content/Templates/inv+pow+rescale.json",
+              "content/My dsps/untitled-2.json",
+              "content/My dsps/untitled-3.json",
+              "content/My dsps/",
+              "content/Compares/"
+            ],
+            "active": "content/My dsps/",
+            "size": 1
+          }
         ],
-        "active": "content/Templates/"
+        "focus": 0
       },
       "right": {
         "tabs": [
