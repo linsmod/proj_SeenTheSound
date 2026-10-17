@@ -17,7 +17,7 @@ registerFunction({
   // 需要 fs（跨帧状态 ST/TS）—— 是否需要帧状态由页面按"f 源码是否引用 fs"自动检测，无需声明
 
   label: '低通(时间)',
-  description: '一阶 IIR：对每个音级的 SFM 时间序列做指数平滑，压掉帧间抖动',
+  description: '一阶 IIR：对每个通道的时间序列做指数平滑，压掉帧间抖动（逐元素独立，对任意通道数成立）',
   category: '滤波',
   tags: 'filter lowpass 平滑 ema iir 滤波',
 

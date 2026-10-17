@@ -22,7 +22,7 @@ registerFunction({
   io: { in: 'vec12', out: 'vec12' },
 
   label: 'z-score',
-  description: '按当前帧算 μ/σ，±zMax 夹紧后线性映射到 0~1；对整体音量涨落免疫',
+  description: '按当前帧算 μ/σ，±zMax 夹紧后线性映射到 0~1；对整体幅度的共同涨落免疫（整体变大变小不改变彼此相对位置）',
   category: '归一化',
   tags: 'zscore 标准化 均值 方差 standard',
 
