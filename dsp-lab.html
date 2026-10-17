@@ -315,6 +315,9 @@
 <script src="/content/Functions/Tanh.js"></script>
 <script src="/content/Functions/Zscore.js"></script>
 <script src="/content/Functions/TopK.js"></script>
+<!-- 参数控件组件库：契约（normalizeParam）→ 各控件（一个文件一个控件）；必须在 inline 之前 -->
+<script src="/content/UIControls/UIControls.js"></script>
+<script src="/content/UIControls/NumberBox.js"></script>
 <script>
 (function () {
     'use strict';
@@ -364,15 +367,7 @@
             kind: mod.kind === 'vector' ? 'vector' : (mod.kind === 'scalar' ? 'scalar' : (mod.kind || 'plain')),
             plain: mod.kind === 'plain' || mod.kind === 'sink',
             f: (typeof mod.f === 'function') ? mod.f : null,
-            params: (mod.paramSchema || []).map((s) => ({
-                key: s.key || s.name,
-                label: s.label || s.key || s.name || '?',
-                type: s.type || 'range',
-                min: (s.min != null) ? s.min : null,
-                max: (s.max != null) ? s.max : null,
-                step: (s.step != null) ? s.step : 0.1,
-                def: (s.def != null) ? s.def : (s.default != null) ? s.default : 0,
-            })),
+            params: (mod.paramSchema || []).map((s) => UIControls.normalizeParam(s)),
             category: mod.category || '其他',
             description: mod.description || '',
         };
@@ -790,6 +785,10 @@
             const lab = document.createElement('label');
             lab.className = 'ctl';
             lab.textContent = spec.label + ' ';
+            const fmt = (v) => UIControls.fmt(v, spec.fractionDigits);
+            let valEl;                                        // commit 闭包引用它，先声明后赋值
+            // 统一写回入口：无论控件是原生 input 还是组件，都从这一处改 dst + 刷显示 + 通知
+            const commit = (v) => { spec.dst[spec.key] = v; valEl.textContent = fmt(v); if (onChg) onChg(); };
             let input;
             if (spec.type === 'select') {
                 input = document.createElement('select');
@@ -797,31 +796,47 @@
                     const op = document.createElement('option');
                     op.value = o.v; op.textContent = o.t; input.appendChild(op);
                 }
-            } else {
+                input.value = spec.dst[spec.key];
+                input.addEventListener('change', () => commit(input.value));
+            } else if (spec.widget === 'range') {
                 input = document.createElement('input');
-                input.type = spec.type === 'number' ? 'number' : 'range';
-                if (spec.min != null) input.min = spec.min;
-                if (spec.max != null) input.max = spec.max;
+                input.type = 'range';
+                if (typeof spec.min === 'number') input.min = spec.min;
+                if (typeof spec.max === 'number') input.max = spec.max;
                 if (spec.step != null) input.step = spec.step;
+                input.value = spec.dst[spec.key];
+                input.addEventListener('input', () => {
+                    let v = parseFloat(input.value);
+                    if (typeof spec.min === 'number') v = Math.max(spec.min, v);
+                    if (typeof spec.max === 'number') v = Math.min(spec.max, v);
+                    commit(v);
+                });
+            } else {
+                // 数字框走组件库（NumberBox）：边界/取整/小数位都由它按契约处理
+                const w = UIControls.WIDGETS[spec.widget] || UIControls.WIDGETS.NumberBox;
+                if (w) {
+                    // fn 边界的求值上下文：当前帧的 12 音级（TopK 的 max=输入长度 用的就是它）
+                    const ctx = () => ({ input: Array.from({ length: SFM_PC }, (_, pc) => sfmDisp[pc * CHART_N + chartWrite]) });
+                    input = w(spec, {
+                        get: () => spec.dst[spec.key],
+                        commit,
+                        ctx,
+                    }).el;
+                } else {
+                    // 组件库没载入的兜底：普通 number 输入，别让参数面板直接空掉
+                    input = document.createElement('input');
+                    input.type = 'number';
+                    if (typeof spec.min === 'number') input.min = spec.min;
+                    if (typeof spec.max === 'number') input.max = spec.max;
+                    input.value = spec.dst[spec.key];
+                    input.addEventListener('input', () => commit(parseFloat(input.value)));
+                }
             }
             // 控件初值取 dst 里已有的值（存档 / 上一轮编辑），不是 spec.def：
             // 一律写 def 会让"存档里 n=3.5"的滑杆显示 2，而管道里跑的是 3.5 —— 控件与实际不符
-            const initV = spec.dst[spec.key];
-            input.value = initV;
-            const valEl = document.createElement('span');
+            valEl = document.createElement('span');
             valEl.className = 'v';
-            valEl.textContent = typeof initV === 'number' ? (+initV).toFixed(2) : String(initV);
-            input.addEventListener('input', () => {
-                let v = input.value;
-                if (spec.type !== 'select') {
-                    v = parseFloat(v);
-                    if (spec.min != null) v = Math.max(spec.min, v);
-                    if (spec.max != null) v = Math.min(spec.max, v);
-                }
-                spec.dst[spec.key] = v;
-                valEl.textContent = typeof v === 'number' ? (+v).toFixed(2) : String(v);
-                if (onChg) onChg();
-            });
+            valEl.textContent = fmt(spec.dst[spec.key]);
             lab.appendChild(input);
             lab.appendChild(valEl);
             container.appendChild(lab);
@@ -2634,8 +2649,10 @@
             for (const sp of op.params) {
                 let v = p[sp.key];
                 if (typeof v !== 'number' || !isFinite(v)) v = sp.def;
-                if (sp.min != null) v = Math.max(sp.min, v);
-                if (sp.max != null) v = Math.min(sp.max, v);
+                // 静态边界只认 number：fn 边界（如 TopK 的 max=输入长度）这里算不了，由算子运行期自己兜底
+                if (typeof sp.min === 'number') v = Math.max(sp.min, v);
+                if (typeof sp.max === 'number') v = Math.min(sp.max, v);
+                if (sp.fractionDigits === 0 && typeof v === 'number') v = Math.round(v);   // 整数参数不存小数
                 p[sp.key] = v;
             }
             out.push({ id: s.id, on: s.on !== false, p, collapsed: typeof s.collapsed === 'boolean' ? s.collapsed : undefined });

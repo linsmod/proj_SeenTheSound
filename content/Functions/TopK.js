@@ -21,9 +21,10 @@ function TopK(fs) {
     var n = arr.length;
     var args = fs.FS_ARGS || {};
 
-    // k 防御：非法 / 缺省 → paramSchema 的默认值；超出范围截断
+    // k 防御：非法 / 缺省 → paramSchema 的默认值；取整 + 超出范围截断
     var k = Number(args.K);
     if (!isFinite(k)) k = 10;
+    k = Math.round(k);
     if (k < 0) k = 0;
     if (k > n) k = n;
 
@@ -57,17 +58,10 @@ TopK.paramSchema = [
         default: 10,
         control: {
             type: 'NumberBox',
-            fractionDigits: 0, // can be fn
-            step: 1, // can be fn
-            min: 1, // can be fn
-            max:(fs)=>fs.INPUT.length, // can be fn
-            shift_step_factor: 'inherit', // shift+mouse wheel, preset is 10x
-            ctrl_step_factor: 'inherit', // preset is 0.1x
-            mid_click_to_reset: 'inherit', // Reset to defaults when mid-click, preset is true
-            arrow_up_behavior:'inherit', // preset is 'step up',
-            arrow_down_behavior:'inherit', // preset is 'step down',
-            arrow_left_behavior:'inherit', // preset is 'step down',
-            arrow_right_behavior:'inherit', // preset is 'step up',
+            fractionDigits: 0,               // 整数：显示与存档都取整
+            step: 1,                         // 可为 fn
+            min: 1,                          // 可为 fn
+            max: (ctx) => ctx.input.length,  // 上限跟输入长度走（UI 重建时求值；存档清洗跳过 fn 边界）
         },
     },
 ];

@@ -560,6 +560,7 @@ def dsp_lab():
 # 只放行 .js：这是"代码目录"，别顺手把 content/ 下的用户数据一起带出去；
 # send_from_directory 自带路径穿越防护（../ 一律 404）。
 FUNC_DIR = os.path.join(HERE, "content", "Functions")
+UIC_DIR = os.path.join(HERE, "content", "UIControls")
 
 
 @app.route("/content/Functions/<path:name>")
@@ -568,6 +569,16 @@ def func_module(name):
         return jsonify({"ok": False, "error": "only .js is served here"}), 404
     resp = send_from_directory(FUNC_DIR, name, mimetype="text/javascript")
     resp.headers["Cache-Control"] = "no-cache"      # 改完刷新生效，别被浏览器缓存骗
+    return resp
+
+
+# 参数控件组件库（NumberBox 等）：与 Functions 同一套"一个文件一个模块"的静态下发
+@app.route("/content/UIControls/<path:name>")
+def uic_module(name):
+    if not name.lower().endswith(".js"):
+        return jsonify({"ok": False, "error": "only .js is served here"}), 404
+    resp = send_from_directory(UIC_DIR, name, mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
     return resp
 
 
