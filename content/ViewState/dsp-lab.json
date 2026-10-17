@@ -149,6 +149,12 @@
       "title": "原始 SFM 数据 副本",
       "desc": "",
       "stages": []
+    },
+    {
+      "id": "untitled-10",
+      "title": "原始 SFM 数据 副本",
+      "desc": "",
+      "stages": []
     }
   ],
   "view": {
@@ -171,28 +177,9 @@
           {
             "tabs": [
               "content/Templates/input.json",
-              "content/My dsps/u1.json",
-              "content/My dsps/untitled-2.json",
-              "content/Compares/",
-              "content/Templates/",
-              "content/Templates/inv+log+rescale.json",
-              "content/My dsps/untitled.json",
-              "content/My dsps/untitled-3.json",
-              "content/Templates/inv+pow+rescale.json",
-              "content/Templates/inv+rank.json",
-              "content/Templates/inv+rescale.json",
-              "content/Templates/inv+rescale+log01.json",
-              "content/Templates/inv+rescale+pow.json",
-              "content/Templates/inv+rescale+tanh.json",
-              "content/Templates/inv+zscore.json",
-              "content/My dsps/",
-              "content/My dsps/untitled-4.json",
-              "content/My dsps/untitled-6.json",
-              "content/Templates/inv.json",
-              "content/ViewState/dsp-lab.json",
-              "content/My dsps/untitled-9.json"
+              "content/Templates/inv.json"
             ],
-            "active": "content/Templates/inv.json",
+            "active": "content/Templates/input.json",
             "size": 1
           }
         ],
@@ -204,7 +191,7 @@
           "untitled",
           "untitled-9"
         ],
-        "active": "untitled-9"
+        "active": "untitled-3"
       }
     },
     "render": {
@@ -212,6 +199,7 @@
       "content/Templates/inv+log+rescale.json": "bars",
       "content/Templates/inv+pow+rescale.json": "line",
       "content/ViewState/dsp-lab.json": "bars"
-    }
+    },
+    "input": "sfm.matrix"
   }
 }

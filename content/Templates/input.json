@@ -2,5 +2,10 @@
   "title": "原始 SFM 数据",
   "desc": "",
   "stages": [
+    {
+      "id": "input",
+      "on": true,
+      "p": {}
+    }
   ]
 }
