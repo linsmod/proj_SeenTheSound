@@ -546,7 +546,7 @@ def index():
 
 @app.route("/dsp-lab")
 def dsp_lab():
-    """Sound DSP 实验室页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
+    """Sound DSP 实验室页 （数据源与主面板同为 /stream）"""
     resp = send_from_directory(HERE, "dsp-lab.html")
     # 这一页在开发期改得很勤：不许缓存，否则改完刷新看到的还是旧 JS，
     # 排查问题时会被"上一版构建的日志"骗半天。

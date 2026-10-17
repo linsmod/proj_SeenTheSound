@@ -58,7 +58,7 @@ python server.py
 | 路由 | 说明 |
 | --- | --- |
 | `GET /` | 返回 `index.html` |
-| `GET /dsp-lab` | 返回 `dsp-lab.html`（Sound DSP 实验室页：管道位置 × 变换函数 的图表矩阵，数据源同 `/stream`） |
+| `GET /dsp-lab` | 返回 `dsp-lab.html`（Sound DSP 实验室页，数据源同 `/stream`） |
 | `GET /api/tree` | 扫 `content/` 返回目录树 + 全部 `.json` 条目 —— DSP 页左栏文件树与其索引的唯一来源 |
 | `GET /api/item?path=content/…json` | 按完整相对路径取单个 DSP 文件条目 |
 | `GET/POST/DELETE /api/shots/<name>.png` | 画布快照：GET 取图 / POST 存图（体内 `data:image/png;base64,…`）/ DELETE 删除，落在 `content/Snapshots/` |

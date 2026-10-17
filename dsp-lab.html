@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Sound DSP</title>
 <style>
-    body { margin: 0; background: #070c1a; color: #bcc8e8; font-family: 'Segoe UI', sans-serif; }
+    /* 应用外壳：整页不滚，滚动发生在各面板内部（VSCode 那套）。
+       顶栏 + 三栏正好占满视口高度，标签条永远在各自组头，不会跟着内容滚走。 */
+    html, body { height: 100%; }
+    body { margin: 0; background: #070c1a; color: #bcc8e8; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; overflow: hidden; }
     .topbar {
-        display: flex; align-items: center; gap: 16px; padding: 8px 12px;
+        display: flex; align-items: center; gap: 16px; padding: 8px 12px; flex: none;
         background: #0b1226; border-bottom: 1px solid rgba(255,255,255,0.08);
         font-size: 12px; flex-wrap: wrap;
     }
@@ -31,12 +34,11 @@
     }
     .legend .lg { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 15px; }
     .legend .sw { display: block; width: 15px; height: 0; border-top: 3px solid; }
-    /* 主体三栏：左 = 文件树（content/ 目录树），中 = 可换视图的面板（目录列表 / 单文件链路），右 = 编辑器（dspEditorView）。
-       左树是导航 + 右键管理入口；中间装什么由 open() 决定（目录卡片列表或某条链路的详情）。
-       窄屏（手机等）放不下三栏时靠 flex-wrap 依次换行，不维护断点。 */
-    .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 10px 12px 16px; }
+    /* 主体三栏：左 = 文件树（导航 + 右键管理），中 = 编辑器组（目录列表 / 单文件链路，可两组并排），右 = 编辑器。
+       三栏常驻、等高、各自内部滚动 —— 不换行、不整页滚（VSCode 的 app shell 语义）。 */
+    .wrap { flex: 1 1 auto; min-height: 0; display: flex; gap: 0; align-items: stretch; overflow: hidden; }
     /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着中间面板一起长） */
-    .tree { flex: 0 0 var(--w-tree, 216px); box-sizing: border-box; padding: 4px 4px 6px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; }
+    .tree { flex: 0 0 var(--w-tree, 216px); box-sizing: border-box; padding: 6px 6px 8px; background: #0b1226; border: 0; border-radius: 0; overflow-y: auto; scrollbar-gutter: stable; }
     /* 树 = 磁盘 content/ 的目录结构：每个目录一个 .grp（目录行 + .kids 内容容器），逐层嵌套缩进 */
     .tree > div + div { margin-top: 2px; }
     /* 目录行可展开/收起（VSCode 那套）：三角单独可点，收起时 .kids 整块隐藏（后代目录与文件一起收） */
@@ -57,20 +59,19 @@
     /* 模板行：非用户创建，只能「从模板新建」出自己的副本，所以整行压暗一档以示只读 */
     .tree .tnode.tpl .tn { color: #9fb0d6; }
     .tree .tnode.tpl .to { color: #6d7fa6; }
-    /* 中间：可换视图的面板（dsplistview / dspview），宽度自适应 */
-    .mid { flex: 1 1 420px; min-width: 0; position: relative; }   /* relative：给标签条的自绘滚动条当定位基准 */
+    /* 中栏 = 编辑器组容器：组头（标签条）固定在上，组体（.pgbody）自己滚 */
+    .mid { flex: 1 1 auto; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
     /* 右栏编辑器（dspEditorView）外壳：背景/圆角/描边/纵向流。
        .etop/.erow/.dsc 是编辑头（改标题说明），画布是"当前链的最终结果"，再往下是工具条与逐级卡。 */
-    .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; flex: 0 1 var(--w-lab, 372px); max-width: var(--w-lab, 372px); min-width: 0; align-self: flex-start; position: relative; }
+    .lab { box-sizing: border-box; background: #0b1226; border: 0; border-radius: 0; display: flex; flex-direction: column; padding: 0 8px 8px; flex: 0 0 var(--w-lab, 372px); min-width: 0; overflow: hidden; position: relative; }
+    /* 右栏的滚动区：标签条钉在栏顶（与中栏组头同一条水平线：栏自身不留上内边距），下面这块自己滚 */
+    .lab .lbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; display: flex; flex-direction: column; padding-top: 6px; }
     /* 面板之间的拖拽分割条（VSCode 那套）：拖左栏 / 右栏宽度，中间面板自动吃剩余；双击复位。
-       命中区 10px（好抓），可见的只是中间 2px 那根线（平时透明，hover / 拖动时亮起）。 */
+       命中区 10px（好抓），可见的只是中间 2px 那根线（常态是一条淡分隔线，hover / 拖动时亮成青色）。 */
     .split { position: relative; flex: 0 0 10px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
-    .split::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; }
-    .split:hover::after, .split.drag::after { background: rgba(74,224,255,0.45); }
-    .wrap.narrow .split { display: none; }        /* 换行了就没有可拖的边界 */
-    /* 吸附 + 栏内滚动只在三栏并排时启用：能否并排由 applySplits() 按实际宽度算（宽度可调后固定媒体查询不再准） */
-    .wrap:not(.narrow) .tree, .wrap:not(.narrow) .lab { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
-    .wrap:not(.narrow) .split { position: sticky; top: 10px; align-self: flex-start; height: calc(100vh - 24px); }
+    .split::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; background: rgba(255,255,255,0.09); }
+    .split:hover::after, .split.drag::after { background: rgba(74,224,255,0.26); }   /* 只提示"这里能拖"，不刺眼 */
+    /* 不再有 sticky / 换行 / narrow 那套：三栏常驻、等宽等高，滚动全在栏内（见 body / .wrap 的外壳规则）。 */
     .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     canvas.mx { flex: none; display: block; width: 100%; height: 132px; background: #0a1022; border-radius: 6px; }
     /* 顶栏的全局播放控制：与全局参数条同族，放在它们右边 */
@@ -157,26 +158,28 @@
        原生横向滚动条夹在"页签"与"分隔线"之间，会把两者撑开、破坏站线的观感，所以自己画一条：
        它是 .panetabs 的兄弟（绝对定位），不随内容滚动，长度按 scrollLeft / scrollWidth 实时算。 */
     .panebar {
-        position: absolute; height: 3px; border-radius: 2px; z-index: 3;
-        background: rgba(74,224,255,0.35); opacity: 0.55; cursor: grab;
-        transition: opacity 0.15s, background 0.15s;
+        position: absolute; height: 2px; border-radius: 2px; z-index: 3;
+        background: rgba(255,255,255,0.20); cursor: grab;      /* 中性灰：它是"滚动位置提示"，不该抢标签的注意力 */
+        transition: background 0.15s;
     }
     .panebar[hidden] { display: none; }
-    /* 看得见的只有 3px，但可抓的高度放大到 ~11px（上下各外扩 4px），否则鼠标根本点不中 */
+    /* 看得见的只有 2px，但可抓的高度放大到 ~10px（上下各外扩 4px），否则鼠标根本点不中 */
     .panebar::before { content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; }
-    .panetabs:hover ~ .panebar, .panebar.hot { opacity: 1; background: rgba(74,224,255,0.78); }
+    .panetabs:hover ~ .panebar, .panebar.hot { background: rgba(255,255,255,0.42); }
     .panebar.hot { cursor: grabbing; }
     /* 内容面板：一块 host 装 N 个 pane（每条标签一个），非活跃的整块 hidden —— 内容与滚动位置一并留着 */
     .panehost { min-width: 0; }
     .tabpane[hidden] { display: none; }
     /* 内容面板可以拆成两组并排（VSCode 的 split editor）：每组自带一条标签条 + 一块 pane 容器。
        组宽由 flex-grow 控制（拖动中间那根 .psplit 时直接改，不重建 DOM）。 */
-    .panegroups { display: flex; align-items: flex-start; min-width: 0; }
-    .pgroup { position: relative; display: flex; flex-direction: column; min-width: 0; flex: 1 1 0; }   /* relative：标签条的自绘滚动条挂在它身上定位 */
+    .panegroups { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; min-width: 0; overflow: hidden; }
+    .pgroup { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1 1 0; }   /* relative：标签条的自绘滚动条挂在它身上定位 */
+    /* 组体 = 可滚动区：组头（标签条）钉在组顶，内容在下面自己滚 */
+    .pgbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 6px 2px 10px; }
     .pgroup.dropin > .panetabs, .pgroup.dropin > .pgbody { outline: 1px dashed rgba(74,224,255,0.45); outline-offset: 2px; border-radius: 4px; }
     .psplit { position: relative; flex: 0 0 10px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
-    .psplit::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; }
-    .psplit:hover::after, .psplit.drag::after { background: rgba(74,224,255,0.45); }
+    .psplit::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; background: rgba(255,255,255,0.09); }
+    .psplit:hover::after, .psplit.drag::after { background: rgba(74,224,255,0.26); }
     /* 标签条末尾的分屏按钮：只在单组时出现 */
     .paneadd { flex: none; align-self: center; width: 20px; height: 18px; margin-left: 2px; padding: 0; background: transparent; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; color: #6d7fa6; font-size: 12px; line-height: 1; cursor: pointer; }
     .paneadd:hover { background: #263a60; color: #cbeeff; border-color: rgba(74,224,255,0.45); }
@@ -247,7 +250,7 @@
 </head>
 <body>
 <div class="topbar">
-    <span class="t">Sound DSP · 管道位置 × 变换函数</span>
+    <span class="t">Sound DSP</span>
     <span class="pbar" id="globalBar"></span>
     <span class="gctl">
         <button id="gPlay" type="button" title="全局播放 / 暂停（暂停时每格各存一张快照到存档）">⏸ 全部暂停</button>
@@ -265,28 +268,29 @@
     <div class="split" data-fixed="lab" title="拖动调整右栏宽度（双击复位）"></div>
     <div class="lab" id="lab">
         <div class="panetabs" id="labTabs" hidden></div>
-        <div class="etop">
-            <span class="dirty" id="labDirty"></span>
-            <button class="xbtn" id="labClose" type="button" title="关闭当前标签（未保存会先问，走 VSCode 关标签那套：保存 / 丢弃 / 取消）">✕</button>
+        <div class="lbody">
+            <div class="etop">
+                <span class="dirty" id="labDirty"></span>
+            </div>
+            <div class="idle">
+                左栏点文件行、或双击中间卡片 → 在这里编辑那一条<br/>
+                <button class="lbtn primary" id="labScratch" type="button" title="临时拼一条链试效果：不落盘，按「保存」会另存为一条「我的图」">＋ 自由探索</button>
+            </div>
+            <div class="erow">
+                <span class="ord" id="labOrd"></span>
+                <input class="ttl" id="labTitle" type="text" maxlength="60" placeholder="标题"/>
+            </div>
+            <textarea class="dsc" id="labDesc" rows="1" maxlength="400" placeholder="说明（鼠标悬停中间卡片时显示）"></textarea>
+            <div class="rohint" id="labRoHint"></div>
+            <div class="pipe" id="labPipe"></div>
+            <canvas class="mx" id="labCanvas"></canvas>
+            <div class="ltools">
+                <button class="lbtn primary" id="labSave" type="button" title="把所有格子待写回的草稿一次性写回中间卡片，并存到服务端 content/ViewState/dsp-lab.json">💾 保存</button>
+                <button class="lbtn edit-only" id="labAdd" type="button" title="在链尾追加一级（上限 8 级，12 音级 × 250 点远超够用）">+ 加一级</button>
+                <button class="lbtn edit-only" id="labClear" type="button" title="清空级联 = 不做任何变换（保存后该格将与 0 号输入同图）">清空</button>
+            </div>
+            <div class="lcharts" id="labCharts"></div>
         </div>
-        <div class="idle">
-            左栏点文件行、或双击中间卡片 → 在这里编辑那一条<br/>
-            <button class="lbtn primary" id="labScratch" type="button" title="临时拼一条链试效果：不落盘，按「保存」会另存为一条「我的图」">＋ 自由探索</button>
-        </div>
-        <div class="erow">
-            <span class="ord" id="labOrd"></span>
-            <input class="ttl" id="labTitle" type="text" maxlength="60" placeholder="标题"/>
-        </div>
-        <textarea class="dsc" id="labDesc" rows="1" maxlength="400" placeholder="说明（鼠标悬停中间卡片时显示）"></textarea>
-        <div class="rohint" id="labRoHint"></div>
-        <div class="pipe" id="labPipe"></div>
-        <canvas class="mx" id="labCanvas"></canvas>
-        <div class="ltools">
-            <button class="lbtn primary" id="labSave" type="button" title="把所有格子待写回的草稿一次性写回中间卡片，并存到服务端 content/ViewState/dsp-lab.json">💾 保存</button>
-            <button class="lbtn edit-only" id="labAdd" type="button" title="在链尾追加一级（上限 8 级，12 音级 × 250 点远超够用）">+ 加一级</button>
-            <button class="lbtn edit-only" id="labClear" type="button" title="清空级联 = 不做任何变换（保存后该格将与 0 号输入同图）">清空</button>
-        </div>
-        <div class="lcharts" id="labCharts"></div>
     </div>
 </div>
 <div class="modal" id="modal" hidden>
@@ -987,13 +991,11 @@
         }
         return d;
     })();
-    const wrapEl = document.querySelector('.wrap');
     function applySplits() {
         const r = document.documentElement.style;
         r.setProperty('--w-tree', splits.tree + 'px');
         r.setProperty('--w-lab', splits.lab + 'px');
-        // 并排放不下（左 + 中420 + 右 + 两条分割条 + gap/padding）就交给 flex-wrap 换行，并关掉吸附与分割条
-        wrapEl.classList.toggle('narrow', window.innerWidth < splits.tree + splits.lab + 420 + 10 * 2 + 10 * 2 + 24);
+        // 三栏常驻、不换行：窗口再窄也只是中间那栏被压扁，不需要 .narrow 那套降级开关了。
     }
     function persistSplits() { try { localStorage.setItem(SPLIT_KEY, JSON.stringify(splits)); } catch (e) {} }
     for (const sp of document.querySelectorAll('.split')) {
@@ -1178,7 +1180,7 @@
             bar.hidden = false;
             bar.style.width = w + 'px';
             bar.style.left = (x0 + (max > 0 ? (host.scrollLeft / max) * bar._span : 0)) + 'px';
-            bar.style.top = (hr.bottom - pr.top - parent.clientTop - 2) + 'px';   // 压在分隔线上
+            bar.style.top = (hr.bottom - pr.top - parent.clientTop - 1) + 'px';   // 压在分隔线上（2px 高，上下各占 1px）
         }
         host.addEventListener('scroll', syncBar, { passive: true });
         if (window.ResizeObserver) new ResizeObserver(syncBar).observe(host);   // 拖分割条改宽时跟着重算
@@ -2602,7 +2604,6 @@
     const labOrdEl = document.getElementById('labOrd');
     const labDirtyEl = document.getElementById('labDirty');
     const labRoHintEl = document.getElementById('labRoHint');
-    const labCloseEl = document.getElementById('labClose');
     const labSaveEl = document.getElementById('labSave');
     // ---- 自绘模态：ask({ title, body, buttons:[{ text, cls, value }] }) → Promise<value>
     // 一律走页面自己的遮罩 + 面板，不用浏览器原生 dialog / alert / confirm；点遮罩或 Esc = 取消（resolve undefined）
@@ -2667,7 +2668,6 @@
         labDirtyEl.title = storeMsg || (mine && others.length
             ? `另有 ${others.length} 处待写回：${others.map(ordOf).join(' ')}`
             : (!selected && n ? '还有未写回的草稿' : ''));
-        labCloseEl.hidden = !selected;        // 空态没有"正在编辑的东西"可关
         labSaveEl.hidden = false;             // 自由探索也允许保存（= 另存为我的图）
         renderTabs();                        // 标签栏：活跃态 / 脏点 / 标题跟着刷
         syncTreeFiles();                     // 树上文件行的选中态也跟着刷
@@ -2749,8 +2749,7 @@
         labSync(true);
         viewAutoSave(clean);
     }
-    // 右上 ✕ = 关掉当前活跃标签
-    async function closeEditor() { if (selected) await closeTab(selected); }
+    // 关标签只有一个入口：标签条上那个 ✕（关的是那一条本身，语义比"关当前"更准）。
     // 提交：把待写回的草稿深拷贝回各自 DOC 条目，再整份存到服务端。
     // 自由探索草稿先另存为一条「我的图」（会建文件并跳到它）。存盘失败不吞：lastSaved 保持旧值 → 状态位继续报"未落盘"。
     async function saveDoc(commitDrafts) {
@@ -3064,8 +3063,6 @@
         labSync(true);
     });
     document.getElementById('labClear').addEventListener('click', () => { if (DRAFT) { DRAFT.stages.length = 0; labSync(true); } });
-    // 关闭：干净就直接关，脏的先弹自绘模态（保存 / 丢弃 / 取消；点遮罩或 Esc = 取消）
-    labCloseEl.addEventListener('click', closeEditor);
     // 全局播放控制
     document.getElementById('gPlay').addEventListener('click', () => setAllPaused(!allPaused()));
     syncEditorInputs();
