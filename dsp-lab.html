@@ -1427,6 +1427,8 @@
                 const x = document.createElement('span'); x.className = 'tx'; x.textContent = '✕';
                 b.appendChild(x);
                 b.addEventListener('click', (ev) => { if (ev.target !== x) opts.activate(id); });
+                // 双击标签头 = 在左树里定位这个文件（Reveal in Explorer）；单击仍只激活，两种手势不打架
+                if (opts.reveal) b.addEventListener('dblclick', (ev) => { if (ev.target !== x) opts.reveal(id); });
                 b.addEventListener('auxclick', (ev) => { if (ev.button === 1) { ev.preventDefault(); opts.close(id); } });   // 中键关闭，同 VSCode
                 x.addEventListener('click', (ev) => { ev.stopPropagation(); opts.close(id); });
                 host.appendChild(b);

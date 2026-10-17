@@ -189,9 +189,6 @@
       "content/Functions/Rescale.js",
       "content/Functions/Inv.js",
       "content/Functions/Log.js",
-      "content/ViewState/",
-      "content/Templates/",
-      "content/UIControls/",
       "content/UIControls/DropdownList.js",
       "content/UIControls/InputSourcePicker.js",
       "content/UIControls/NumberBox.js",
@@ -209,9 +206,11 @@
               "content/UIControls/NumberBox.js#NumberBox",
               "content/My dsps/",
               "content/My dsps/InputSwitch.json",
-              "content/My dsps/untitled-10.json"
+              "content/My dsps/untitled-10.json",
+              "content/ViewState/dsp-lab.json",
+              "content/My dsps/untitled-3.json"
             ],
-            "active": "content/My dsps/InputSwitch.json",
+            "active": "content/ViewState/dsp-lab.json",
             "size": 1
           }
         ],
