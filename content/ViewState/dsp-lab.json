@@ -236,9 +236,10 @@
               "content/Snapshots/content_My_dsps_untitled-6.json.json",
               "content/Snapshots/content_My_dsps_untitled-7.json.json",
               "content/Snapshots/content_My_dsps_untitled-8.json.json",
-              "content/Snapshots/content_My_dsps_untitled-9.json.json"
+              "content/Snapshots/content_My_dsps_untitled-9.json.json",
+              "content/Buffers/wave.pcm.js"
             ],
-            "active": "content/Buffers/wave.pcm.js#wave.pcm",
+            "active": "content/Buffers/wave.pcm.js",
             "size": 1
           }
         ],

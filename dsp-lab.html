@@ -143,7 +143,7 @@
         color: #7d8db3; font-size: 12px; line-height: 1.35; white-space: nowrap;
         cursor: pointer; transition: background 0.12s, color 0.12s;
     }
-    .panetab:hover { background: rgba(255,255,255,0.045); color: #bcc8e8; }
+    .panetab:hover { background: rgba(255,255,255,0.045); border-color: rgba(255,255,255,0.22); color: #bcc8e8; }   /* 背景 + 边框双重提示（选中态更亮，不冲突） */
     .panetab.on {
         background: rgba(74,224,255,0.10);
         border-color: rgba(74,224,255,0.28);
@@ -259,13 +259,17 @@
     .dsplist .tdesc { margin-top: 4px; font-size: 11px; line-height: 1.6; color: #8fa2c8; }
     .dsplist .pipe, .dspview .pipe { margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* dspview：单个文件的链路视图 —— 大画布 + 逐级算子 + 入口按钮 */
-    .dspview { background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px;}
+        .dspview { background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 8px 10px 10px; }
     .dspview .vh { font-size: 15px; font-weight: 700; color: #e8eefc; }
     .dspview .vdesc { margin: 4px 0 6px; font-size: 11px; line-height: 1.7; color: #8fa2c8; }
     .dspview .stages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .dspview .st { padding: 3px 8px; background: #0a1022; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; }
     .dspview .st.off { opacity: 0.45; text-decoration: line-through; }
     .dspview .vtools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    /* fnview / bufview / srcview：各自立户的视图（不再蹭 .dspview 的类），盒型一致、芯片样式共用 */
+    .fnview, .bufview { background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 8px 10px 10px; }
+    .fnview .st, .bufview .st, .srcview .st { padding: 3px 8px; background: #0a1022; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; }
+    .fnview .vtools, .bufview .vtools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .tpl-empty { padding: 14px 2px; font-size: 12px; color: #5a6c94; }
 </style>
 </head>
@@ -1629,8 +1633,8 @@
         if (p.el) p.el.hidden = !on;
         for (const ch of p.charts) ch.hidden = !on;
     }
-    // view 名 → 样式类名（view 名是路由用的，类名沿用原来的 .dsplist / .dspview，样式不用改）
-    const VIEW_CLASS = { dsplistview: 'dsplist', dspview: 'dspview' };
+    // view 名 → 样式类名（路由用；fnview/bufview/srcview 各自有立户的样式类，不再蹭 .dspview）
+    const VIEW_CLASS = { dsplistview: 'dsplist', dspview: 'dspview', fnview: 'fnview', bufview: 'bufview', srcview: 'srcview' };
     // ---------- View 注册表 ----------
     // 面板不再认识具体视图名，只认这张表。一个 view 就是"怎么把 doc 画进 pane"：
     //   mount(p)         往 p.el 里建 DOM（画布必须走 addPaneChart(p, ch)，否则不会被注销）
