@@ -547,7 +547,28 @@ def index():
 @app.route("/dsp-lab")
 def dsp_lab():
     """Sound DSP 实验室页：管道位置 × 变换函数 的图表矩阵（数据源与主面板同为 /stream）"""
-    return send_from_directory(HERE, "dsp-lab.html")
+    resp = send_from_directory(HERE, "dsp-lab.html")
+    # 这一页在开发期改得很勤：不许缓存，否则改完刷新看到的还是旧 JS，
+    # 排查问题时会被"上一版构建的日志"骗半天。
+    resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
+# ---- 前端函数库：content/Functions/*.js 直接静态下发 ----
+# DSP 处理核心的模块脚本（Processor / Compile / 各算子）由页面用 <script src> 引入。
+# 只放行 .js：这是"代码目录"，别顺手把 content/ 下的用户数据一起带出去；
+# send_from_directory 自带路径穿越防护（../ 一律 404）。
+FUNC_DIR = os.path.join(HERE, "content", "Functions")
+
+
+@app.route("/content/Functions/<path:name>")
+def func_module(name):
+    if not name.lower().endswith(".js"):
+        return jsonify({"ok": False, "error": "only .js is served here"}), 404
+    resp = send_from_directory(FUNC_DIR, name, mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"      # 改完刷新生效，别被浏览器缓存骗
+    return resp
 
 
 @app.route("/stream")

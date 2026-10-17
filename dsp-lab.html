@@ -284,6 +284,19 @@
         <div class="dlg-f" id="modalFoot"></div>
     </div>
 </div>
+<!-- DSP 处理核心：运行时 → 编译器 → 各算子模块（顺序有意义，模块必须在 Compile.js 之后） -->
+<script src="/content/Functions/Processor.js"></script>
+<script src="/content/Functions/Compile.js"></script>
+<script src="/content/Functions/Id.js"></script>
+<script src="/content/Functions/Inv.js"></script>
+<script src="/content/Functions/Log.js"></script>
+<script src="/content/Functions/Log01.js"></script>
+<script src="/content/Functions/Pow.js"></script>
+<script src="/content/Functions/Rank.js"></script>
+<script src="/content/Functions/Rescale.js"></script>
+<script src="/content/Functions/Tanh.js"></script>
+<script src="/content/Functions/Zscore.js"></script>
+<script src="/content/Functions/TopK.js"></script>
 <script>
 (function () {
     'use strict';
@@ -620,9 +633,9 @@
     const pipeTmp = new Float64Array(SFM_PC);   // 单点 12 音级工作区（computeChart 同步调用，不可跨图复用）
     const rankTmp = new Float64Array(SFM_PC);   // rank 就地改写前先快照原值
 
-    // 单图管道计算：sfmLines（12×CHART_N 滑窗合成的 SFM）→ ch.out（同布局，0~1 归一值）
-    // stages 是唯一事实来源：网格各格与右栏逐级卡共用同一条执行路径。
-    // 反相不再写死在这里 —— 它是 OPS 里的普通算子 inv，由各图自己的 stages 决定要不要、放在哪。
+    // 旧的整窗批算：sfmLines（12×CHART_N，窗口序）→ ch.out（同布局，0~1 归一值）
+    // 现役渲染已经不用它了（见下面的 stepChart）；它保留下来当 dspSelfTest 的**基准实现**，
+    // 用来证明新链路逐点等价。stages 是唯一事实来源，两条路径读的是同一份。
     function computeChart(ch, sfmLines) {
         const out = ch.out, stages = ch.stages;
         for (let p = 0; p < chartCount; p++) {
@@ -639,6 +652,116 @@
             // 3) 夹到 0~1 上屏（归一化后变换也在此之前跑完，与旧实现同序）
             for (let pc = 0; pc < SFM_PC; pc++) out[pc * CHART_N + p] = Math.max(0, Math.min(1, pipeTmp[pc]));
         }
+    }
+
+    // ---------- 现役处理核心：逐列推进（取代每帧整窗重算） ----------
+    // 数据布局与 sfmDisp 一致：**绝对环形下标**。第 i 列的输入 = sfmDisp[pc*CHART_N + i]，
+    // 输出写回 ch.out[pc*CHART_N + i]；画图时用 ringMap 把窗口位置 p 映射回绝对下标。
+    //
+    // 为什么可以逐列：现有算子都是"逐帧纯函数"，第 i 列的输出只取决于第 i 列的输入。
+    // 旧模型每帧把 250 列全重算一遍（等于同样结果算 60 次/秒）；现在只在 chartWrite 前进时
+    // 算新进来的那几列。将来接有状态的算子（WIN/BUF 包络、延迟线）时，这个模型才是对的
+    // —— 状态天然"一列推进一次"。
+    const ringMap = new Uint16Array(CHART_N);    // ringMap[p] = (chartWrite + p) % CHART_N
+    let ringMapAt = -1;
+    function syncRingMap() {
+        if (ringMapAt === chartWrite) return;    // chartWrite 20ms 才动一次，不必每帧重算
+        ringMapAt = chartWrite;
+        for (let p = 0; p < CHART_N; p++) ringMap[p] = (chartWrite + p) % CHART_N;
+    }
+
+    // 级联签名：结构（算子 id / 启停 / 参数）一变就要重编译并整窗重算
+    function stageSig(stages) {
+        let s = '';
+        for (let i = 0; i < stages.length; i++) {
+            const st = stages[i];
+            s += st.id + ':' + (st.on === false ? 0 : 1) + ':' + JSON.stringify(st.p || {}) + '|';
+        }
+        return s;
+    }
+
+    // 这一格"应该"编出几个实例（停用的级不算；注册表还没就绪就返回 -1，别瞎判）
+    function wantInstances(stages) {
+        if (typeof getFunction !== 'function') return -1;
+        let n = 0;
+        for (const s of stages) if (s.on !== false && getFunction(s.id)) n++;
+        return n;
+    }
+
+    // 确保这一格有可用处理器；结构变了就重编译并清空历史
+    function prepChart(ch) {
+        const stages = ch.stages || [];
+        const sig = stageSig(stages);
+        if (ch.pipeSig === sig && (ch.proc || ch.procFailed)) {
+            if (!ch.proc) return;                       // 编译失败过，不用重试
+            // 编译产物必须和"启用着的级数"对得上。对不上说明这份 proc 是在另一个结构下编的
+            // （典型：首帧 stages 还是空的、编出个整条旁路的空链），拿它继续写 ring 会把
+            // 原始 SFM 当结果画出来 —— 强制重编 + 整窗重算。
+            const want = wantInstances(stages);
+            if (want < 0 || ch.proc.instances.length === want) return;
+            ch.lastIdx = null;
+            ch.lastSeq = null;
+        } else if (ch.pipeSig !== sig) {
+            ch.lastIdx = null;                           // 换了链 / 首次 → 整窗重算
+            ch.lastSeq = null;
+        }
+        ch.pipeSig = sig;
+        ch.proc = null;
+        ch.procFailed = false;
+        ch.procErr = '';
+        if (typeof compileChart !== 'function' || typeof createFrameState !== 'function') {
+            ch.procFailed = true;
+            ch.procErr = '处理核心未加载（/content/Functions/*.js 404？）';
+            return;
+        }
+        ch.st = ch.st || createFrameState({});
+        try {
+            const proc = compileChart({ stages }, 'chart/' + (keyOf(ch) || 'x'));
+            if (proc.warnings.length) throw new Error(proc.warnings.join('; '));
+            ch.proc = proc;
+            // 关键：DSPRun 只跑 fs.DSP_ARR —— 不把编译结果塞进去，runProgram([]) 会
+            // 直接把 INPUT 原样返回，等于整条链被旁路（所有画布画成同一张原始 SFM）。
+            ch.st.DSP_ARR = [proc];
+        } catch (e) {
+            ch.procFailed = true;
+            ch.procErr = String((e && e.message) || e);
+            ch.st.DSP_ARR = [];
+            console.warn('[chart] ' + (keyOf(ch) || '?') + ' 编译失败：' + ch.procErr);
+        }
+    }
+
+    // 算一列（绝对下标 idx）：取输入 → DSPRun → 夹紧写回 ch.out
+    function runColumn(ch, idx) {
+        const inp = new Float64Array(SFM_PC);        // 旧实现工作区是 Float64，保持同一精度路径
+        for (let pc = 0; pc < SFM_PC; pc++) inp[pc] = sfmDisp[pc * CHART_N + idx];
+        ch.st.INPUT = inp;
+        let r;
+        try { r = DSPRun(ch.st); }
+        catch (e) { ch.procErr = String((e && e.message) || e); return; }
+        if (ch.st.ERROR) { ch.procErr = ch.st.ERROR.key + ' ' + ch.st.ERROR.msg; return; }
+        const out = ch.out;
+        for (let pc = 0; pc < SFM_PC; pc++) out[pc * CHART_N + idx] = Math.max(0, Math.min(1, r[pc]));
+    }
+
+    // 把历史推进到最新：首次 / 换链 / 落后太多时整窗算满，平时只补新进来那几列。
+    // 落后量必须用**单调计数器** chartSeq 算，不能用 (chartWrite - lastIdx + N) % N ——
+    // 模运算下"落后正好 250 帧"和"没有新数据"都是 0，会让停过一阵的画布永远落后一整圈。
+    function stepChart(ch) {
+        if (!ch.proc) return;
+        const full = () => {
+            for (let i = 0; i < CHART_N; i++) runColumn(ch, i);
+            ch.lastIdx = chartWrite;
+            ch.lastSeq = chartSeq;
+        };
+        if (ch.lastSeq === null || ch.lastSeq === undefined) { full(); return; }
+        const lag = chartSeq - ch.lastSeq;
+        if (lag <= 0) return;                        // 真的没有新样本
+        if (lag > 8) { full(); return; }             // 落后一整段（暂停恢复 / 长时间隐藏）→ 整窗重算
+        for (let k = 0; k < lag; k++) {
+            runColumn(ch, ch.lastIdx);
+            ch.lastIdx = (ch.lastIdx + 1) % CHART_N;
+        }
+        ch.lastSeq = chartSeq;
     }
     // ---------- 参数控件工厂（可复用：fn/norm 只声明 params spec 即得控件，防代码膨胀） ----------
     // specs: [{key,label,type:'range'|'number'|'select',min,max,step,def,options,dst}]
@@ -736,6 +859,9 @@
     const sfmDisp = new Float32Array(SFM_PC * CHART_N);    // 写入时冻结的显示 SFM（通道主序，下标 pc*CHART_N+idx）
     let sfmWinK = 10;                 // 平坦度时间窗（采样数，50Hz；由全局控件改秒数；写入时冻结，改窗只影响新采样）
     let chartWrite = 0, chartAccum = 0, isRunning = false, lastTs = 0;
+    // 累计写入了多少列（单调递增）。判断"某块画布落后多少"只认它：
+    // 用 (chartWrite - lastIdx + N) % N 会把"落后正好 250 帧"和"没有新数据"都算成 0。
+    let chartSeq = 0;
     // 写入时冻结合成：idx 采样的显示 SFM 按当时窗 K 算一次，此后永不变。
     // 旧的显示端滑窗在左边界截断（最左 K−1 个点窗口不满、随点左移窗口继续变短 →
     // 历史值被改写、左端图像变形），且老样本的历史槽位已被新数据覆盖、显示端无法补算，故移除。
@@ -769,16 +895,20 @@
             }
             freezeSfmDisp(chartWrite);   // 显示 SFM 写入时冻结（窗恒为满窗，历史值不随窗口滑动改变）
             chartWrite = (chartWrite + 1) % CHART_N;
+            chartSeq++;
         }
     }
     function sfmFillLines() {
-        // 显示序重排：只读写入时冻结的 sfmDisp（历史值永不重算）
+        // 显示序重排：只读写入时冻结的 sfmDisp（历史值永不重算）。
+        // 现役渲染改走绝对下标（stepChart 直接写 ch.out[i]），这份窗口序数组只剩
+        // dspSelfTest 的基准对照在用 —— 留着它，等于留了一条随时可复算的真相。
         for (let pc = 0; pc < SFM_PC; pc++) {
             const base = pc * CHART_N;
             for (let p = 0; p < chartCount; p++) {
                 sfmLines[base + p] = sfmDisp[base + ((chartWrite + p) % CHART_N)];
             }
         }
+        syncRingMap();
     }
     function connectSSE() {
         const es = new EventSource('/stream');
@@ -2678,6 +2808,7 @@
         const decimated = step > 1.5;
         const xOf = (p) => padL + iw * p / (CHART_N - 1);
         const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
+        const rm = ringMap;                  // 窗口位置 p → 绝对环形下标（out 现在按绝对下标存）
         for (let pc = 0; pc < SFM_PC; pc++) {
             const base = pc * CHART_N, col = SEMI_RGB[pc];
             c.beginPath();
@@ -2686,13 +2817,13 @@
                     const p0 = Math.floor(ci * step), p1 = Math.min(chartCount, Math.floor((ci + 1) * step));
                     if (p1 <= p0) continue;
                     let mn = Infinity, mx = -Infinity;
-                    for (let p = p0; p < p1; p++) { const v = ch.out[base + p]; if (v < mn) mn = v; if (v > mx) mx = v; }
+                    for (let p = p0; p < p1; p++) { const v = ch.out[base + rm[p]]; if (v < mn) mn = v; if (v > mx) mx = v; }
                     const x = padL + ci;           // 整数 x：列与像素对齐，逐帧不抖
                     c.moveTo(x, yOf(mn));
                     c.lineTo(x, yOf(mx));
                 }
             } else {
-                for (let p = 0; p < chartCount; p++) c.lineTo(xOf(p), yOf(ch.out[base + p]));
+                for (let p = 0; p < chartCount; p++) c.lineTo(xOf(p), yOf(ch.out[base + rm[p]]));
             }
             c.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.85)`;
             c.lineWidth = 1;
@@ -2710,8 +2841,20 @@
         }
         sfmFillLines();
         // hidden = 右栏里收起的级：画布 display:none，画了也看不见，白算白画
-        // paused = 用户按了暂停：冻结在这最后一帧上，连 compute 都省了
-        for (const ch of charts) { if (ch.hidden || ch.paused) continue; computeChart(ch, sfmLines); drawChart(ch); }
+        // paused = 用户按了暂停：冻结在这最后一帧上，连推进都省了
+        // 正常状态下每帧每格只推进 0~1 列（chartWrite 20ms 才动一次），不是重算整窗
+        for (const ch of charts) {
+            if (ch.hidden || ch.paused) continue;
+            // 单块画布出错不能把整个动画循环带走（否则一行异常 = 整页停摆，而且看不出是它）
+            try {
+                prepChart(ch);
+                stepChart(ch);
+                drawChart(ch);
+            } catch (e) {
+                const msg = String((e && e.message) || e);
+                if (ch.errMsg !== msg) { ch.errMsg = msg; console.warn('[chart] 渲染出错：' + msg); }
+            }
+        }
         requestAnimationFrame(loop);
     }
     // 所有画布的逻辑宽都随容器实测（含右栏），窗口/缩放变化时逐块重量。
@@ -2746,6 +2889,174 @@
         renderCenter();            // 挂上内容面板当前活跃的那条标签（没存档时就是 Templates 目录列表）
         refreshDirty();
     })();
+    // ---------- 新处理核心自检：旧 computeChart vs 新 compileChart + DSPRun ----------
+    // 只读：不碰任何画布、不改 DOC。口径与 content/Functions/_equiv.js 完全一致
+    // （整窗 CHART_N 帧、末端 clamp(0,1) 后落进 Float32 再逐点比）。
+    // 覆盖两批：「我的图」（DOC.charts）+ content/Templates/ 的只读预设。
+    // 模板不在 DOC 里，得单独列一遍 —— 但它们恰好把 8 个算子的组合都覆盖了，是最好的用例。
+    // 控制台敲 dspSelfTest() 随时重跑；页面加载后约 6 秒自动跑一次（那时已收满一整窗）。
+    function selfTestChart(ch) {
+        const stages = (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} }));
+        const oldOut = new Float32Array(SFM_PC * CHART_N);
+        computeChart({ out: oldOut, stages }, sfmLines);   // 旧路径（复用 pipeTmp/rankTmp；同步执行，打完即回）
+
+        let proc;
+        try { proc = compileChart({ stages }, 'selftest/' + (ch.id || 'x')); }
+        catch (e) { return { err: '编译失败：' + e.message }; }
+        if (proc.warnings.length) return { err: proc.warnings.join('; ') };
+
+        const st = createFrameState({});
+        st.DSP_ARR = [proc];
+        const newOut = new Float32Array(SFM_PC * CHART_N);
+        for (let p = 0; p < CHART_N; p++) {
+            const inp = new Float64Array(SFM_PC);          // 旧实现内部工作区是 Float64，保持一致
+            for (let pc = 0; pc < SFM_PC; pc++) inp[pc] = sfmLines[pc * CHART_N + p];
+            st.INPUT = inp;
+            let r;
+            try { r = DSPRun(st); } catch (e) { return { err: `第 ${p} 帧：${e.message}` }; }
+            if (st.ERROR) return { err: `第 ${p} 帧：${st.ERROR.key} ${st.ERROR.msg}` };
+            for (let pc = 0; pc < SFM_PC; pc++) newOut[pc * CHART_N + p] = Math.max(0, Math.min(1, r[pc]));
+        }
+
+        // 落盘布局是 out[pc * CHART_N + p]，所以最差点的下标要反解成（音级, 帧）
+        let bad = 0, maxd = 0, at = -1;
+        for (let i = 0; i < oldOut.length; i++) {
+            const d = Math.abs(oldOut[i] - newOut[i]);
+            if (d > maxd) { maxd = d; at = i; }
+            if (oldOut[i] !== newOut[i]) bad++;
+        }
+        return { points: oldOut.length, bad, maxd, at };
+    }
+
+    // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
+    const ST_BUILD = 'r4';
+    window.dspSelfTest = function (opts) {
+        const quiet = !!(opts && opts.quiet);
+        const withTpl = !(opts && opts.templates === false);
+        if (!quiet) console.info(`[selftest] build=${ST_BUILD}`);
+        if (typeof compileChart !== 'function' || typeof DSPRun !== 'function') {
+            console.warn('[selftest] 新运行时没加载 —— 检查 /content/Functions/*.js 是否 404');
+            return null;
+        }
+
+        // 输入活跃度：全是 0 时"一致"没有说服力，先把这件事摆到台面上
+        let live = 0;
+        for (let i = 0; i < sfmLines.length; i++) if (sfmLines[i] !== 0) live++;
+        const livePct = (live / sfmLines.length * 100).toFixed(1);
+        if (!live && !quiet) {
+            console.info('[selftest] 输入全是 0（没有音频数据），这一轮只能证明"零输入下两边一致"');
+        }
+
+        const rows = [];
+        let bad = 0, total = 0, n = 0;
+        const run = (label, group, ch) => {
+            n++;
+            const r = selfTestChart(ch);
+            if (r.err) {
+                rows.push({ 图: label, 分组: group, 点数: 0, 不一致: '-', 最大差: r.err, 最差处: '' });
+                bad++;
+                return;
+            }
+            total += r.points; bad += r.bad;
+            // at 是扁平下标：pc = at / CHART_N，帧 = at % CHART_N
+            const where = r.bad ? `帧 ${r.at % CHART_N} · ${NOTE_NAMES[Math.floor(r.at / CHART_N)]}` : '—';
+            rows.push({
+                图: label, 分组: group, 点数: r.points, 不一致: r.bad,
+                最大差: r.maxd.toExponential(2), 最差处: where,
+            });
+        };
+
+        for (const ch of DOC.charts) run(ch.id, '我的图', ch);
+
+        if (withTpl) {
+            // 模板来自磁盘（只读）。$schema.json 是 schema 文档不是处理链（服务端给它的是空 stages），跳过。
+            for (const it of FILES) {
+                if (dirOf(it.file) !== DIR_TPL || !Array.isArray(it.stages)) continue;
+                const nm = stemOf(it.file);
+                if (nm.charAt(0) === '$') continue;
+                run(it.title || nm, '模板', { stages: stagesOfItem(it) });
+            }
+        }
+
+        // 再验一遍**现役渲染路径**：各画布逐列累积出来的 ring，映射回窗口序后必须与整窗批算逐点相同。
+        // 只查正在跑的画布 —— hidden / paused 的 ring 本来就不推进，比了必错。
+        let liveN = 0, liveBad = 0, liveStale = 0;
+        const liveRows = [];
+        for (const ch of charts) {
+            if (ch.hidden || ch.paused) continue;
+            try {
+                prepChart(ch);
+                stepChart(ch);   // 先同步追平：别把"刚切过来、还没跑一帧"当成不一致
+                if (!ch.proc) continue;
+                const stages = (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} }));
+                const ref = new Float32Array(SFM_PC * CHART_N);
+                computeChart({ out: ref, stages }, sfmLines);
+
+                const diff = () => {
+                    for (let pc = 0; pc < SFM_PC; pc++) {
+                        for (let p = 0; p < CHART_N; p++) {
+                            const ii = pc * CHART_N + ringMap[p];
+                            if (ch.out[ii] !== ref[pc * CHART_N + p]) return { pc, p, lv: ch.out[ii], rv: ref[pc * CHART_N + p] };
+                        }
+                    }
+                    return null;
+                };
+
+                liveN++;
+                const a = diff();
+                if (!a) continue;
+
+                // 强制整窗重算再看一次：能分开"增量落后"和"映射/数据真错"两种原因
+                ch.lastSeq = null;
+                stepChart(ch);
+                const b = diff();
+                if (b) liveBad++; else liveStale++;
+
+                // 把这一列的输入和两边输出都摆出来 —— 一眼能看出是"输错了"还是"链没跑对"
+                const col = (chartWrite + a.p) % CHART_N;
+                const dump = (get) => Array.from({ length: SFM_PC }, (_, pc) => +get(pc).toFixed(3)).join(' ');
+                if (!quiet) {
+                    console.log(`[selftest] 差异画布 ${keyOf(ch) || '(右栏)'} · 链 ${stages.map((s) => s.id + (s.on ? '' : '·off')).join('+') || '(空链)'} · 帧 ${a.p} / 列 ${col} / ${NOTE_NAMES[a.pc]}`
+                        + ` · 编译实例 [${ch.proc.instances.map((b) => b.id).join('+') || '0 个 → 整条旁路'}]`
+                        + ` · lastSeq=${ch.lastSeq} / chartSeq=${chartSeq}`);
+                    console.log('  该列输入 sfmDisp :', dump((pc) => sfmDisp[pc * CHART_N + col]));
+                    console.log('  累积 ch.out      :', dump((pc) => ch.out[pc * CHART_N + col]));
+                    console.log('  批算 ref         :', dump((pc) => ref[pc * CHART_N + a.p]));
+                }
+                liveRows.push({
+                    画布: keyOf(ch) || '(右栏)',
+                    算子链: stages.map((s) => s.id + (s.on ? '' : '·off')).join('+') || '(空链)',
+                    首个差异: `帧 ${a.p} · ${NOTE_NAMES[a.pc]}`,
+                    累积值: a.lv, 批算值: a.rv,
+                    整窗重算后: b ? `仍差 ${b.lv} vs ${b.rv}` : '一致（增量落后）',
+                });
+            } catch (e) {
+                liveBad++;
+                liveRows.push({ 画布: keyOf(ch) || '(右栏)', 算子链: '—', 首个差异: '异常', 累积值: String((e && e.message) || e), 批算值: '', 整窗重算后: '' });
+            }
+        }
+        if (!quiet && liveRows.length) console.table(liveRows);
+
+        if (!n) {
+            if (!quiet) console.info('[selftest] 没有可比对的对象（既没「我的图」也没模板）');
+            return { ok: true, rows, total: 0, bad: 0, livePct, liveN, liveBad };
+        }
+        if (!quiet) console.table(rows);
+        const msg = `[selftest] ${n} 张图 / ${total} 点，不一致 ${bad} 点 · 输入活跃度 ${livePct}%`;
+        if (bad) console.warn(msg + ' ✗'); else console.info(msg + ' ✓');
+        if (liveN) {
+            const lm = `[selftest] 渲染路径：${liveN} 张画布，增量落后 ${liveStale} 张 · 整窗重算后仍不一致 ${liveBad} 张`;
+            if (liveBad) console.warn(lm + ' ✗'); else console.info(lm + ' ✓');
+        }
+        return { ok: bad === 0 && liveBad === 0, rows, total, bad, livePct, liveN, liveBad, liveStale };
+    };
+
+    // 6 秒 ≈ 250 帧 @50Hz：等一整窗填满再比，否则比的是零输入
+    setTimeout(() => {
+        if (!isRunning) { console.info('[selftest] 没在接收数据，跳过自动自检（可手动 dspSelfTest()）'); return; }
+        window.dspSelfTest();
+    }, 6000);
+
     // 调试入口：控制台里 open({ file: 'content/Templates/inv+zscore.json' }) 可直接切视图
     window.dspLabOpen = open;
     requestAnimationFrame(loop);
