@@ -200,7 +200,6 @@
       "content/Views/",
       "content/ViewState/",
       "content/UIControls/DropdownList.js",
-      "content/Functions/",
       "content/Functions/Id.js",
       "content/Functions/TopK.js",
       "content/Buffers/sfm.matrix.js",
@@ -218,28 +217,14 @@
               "content/UIControls/InputSourcePicker.js#InputSourcePicker",
               "content/UIControls/NumberBox.js#NumberBox",
               "content/My dsps/",
-              "content/My dsps/InputSwitch.json",
-              "content/ViewState/dsp-lab.json",
-              "content/My dsps/untitled-3.json",
-              "content/My dsps/untitled-5.json",
-              "content/My dsps/untitled-8.json",
-              "content/Compares/",
-              "content/Compares/untitled.cmpv",
-              "content/Buffers/gate.grid.js#gate.grid",
-              "content/Buffers/sfm.matrix.js#sfm.matrix",
-              "content/Buffers/spec.fft.js#spec.fft",
-              "content/Buffers/wave.pcm.js#wave.pcm",
-              "content/Snapshots/content_My_dsps_untitled-3.json.json",
-              "content/Snapshots/content_My_dsps_untitled-2.json.json",
-              "content/Snapshots/content_My_dsps_untitled-4.json.json",
-              "content/Snapshots/content_My_dsps_untitled-5.json.json",
-              "content/Snapshots/content_My_dsps_untitled-6.json.json",
-              "content/Snapshots/content_My_dsps_untitled-7.json.json",
-              "content/Snapshots/content_My_dsps_untitled-8.json.json",
               "content/Snapshots/content_My_dsps_untitled-9.json.json",
-              "content/Buffers/wave.pcm.js"
+              "content/Buffers/wave.pcm.js",
+              "content/Compares/untitled.cmpv",
+              "content/Compares/",
+              "content/Buffers/wave.pcm.js#wave.pcm",
+              "content/Buffers/spec.raw.js"
             ],
-            "active": "content/Buffers/wave.pcm.js",
+            "active": "content/Buffers/spec.raw.js",
             "size": 1
           }
         ],
@@ -262,6 +247,9 @@
       "content/Templates/inv+pow+rescale.json": "line",
       "content/ViewState/dsp-lab.json": "bars"
     },
-    "input": "sfm.matrix"
+    "input": "sfm.matrix",
+    "scrolls": {
+      "content/Buffers/spec.raw.js": 129.60000610351562
+    }
   }
 }

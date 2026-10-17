@@ -345,6 +345,7 @@
 <script src="/content/Buffers/sfm.matrix.js"></script>
 <script src="/content/Buffers/spec.fft.js"></script>
 <script src="/content/Buffers/gate.grid.js"></script>
+<script src="/content/Buffers/spec.raw.js"></script>
 <script src="/content/Buffers/wave.pcm.js"></script>
 <!-- 图表渲染器：走势 / 柱状…（一个渲染器一个文件，ChartRenderers 注册表） -->
 <script src="/content/Renderers/Renderers.js"></script>
@@ -518,13 +519,14 @@
         if (typeof raw.input === 'string' && window.Buffers && Buffers.get(raw.input)) v.input = raw.input;
         // 各面板的标签：center 收 content/ 下的路径（文件或目录），right 只收这一份存档认得的条目 id。
         // 去重 + 截断都做一遍（存档是手写 / 老版本产的，形态不可信）；active 落空就退回第一个。
+        // 截断保**尾部**：新标签追加在尾部，保头部会在超限时丢掉刚打开的标签（active 跟着丢 → 还原错位）
         const dedup = (list, ok) => {
             const seen = new Set(), out = [];
             for (const k of (Array.isArray(list) ? list : [])) {
                 if (!ok(k) || seen.has(k)) continue;
                 seen.add(k); out.push(k);
             }
-            return out.slice(0, 24);
+            return out.slice(-24);
         };
         const pathOk = (k) => typeof k === 'string' && (isFileKey(k) || isFnKey(k) || isSrcFileKey(k) || (DIR_KEY_RE.test(k) && k !== CONTENT_ROOT));
         const idOk = (k) => typeof k === 'string' && set.has(k);
@@ -539,16 +541,19 @@
         // 一条 key 只能属于一组 —— 手改过的存档里可能重复，跨组去重。
         const seenK = new Set();
         const cTake = (list) => (Array.isArray(list) ? list.filter((k) => !seenK.has(k) && (seenK.add(k), true)) : []);
-        const cPathOk = (list) => {
+        const cPathOk = (list, keep) => {
             const out = [];
             for (const k of list) if (pathOk(k)) out.push(k);
-            return out.slice(0, 24);
+            // 保尾部 24 条，但 active 永远在册（哪怕它是最老的——被挤出就插回队首）
+            const kept = out.slice(-24);
+            if (keep && out.indexOf(keep) >= 0 && kept.indexOf(keep) < 0) kept.unshift(keep);
+            return kept;
         };
         const cGroups = [];
         const gIn = (cIn && Array.isArray(cIn.groups)) ? cIn.groups
             : (cIn && Array.isArray(cIn.tabs) ? [{ tabs: cIn.tabs, active: cIn.active }] : []);
         for (const gi of gIn.slice(0, 2)) {
-            const tabs = cPathOk(cTake(gi && gi.tabs));
+            const tabs = cPathOk(cTake(gi && gi.tabs), gi && gi.active);
             if (!tabs.length) continue;
             const size = (gi && Number.isFinite(gi.size) && gi.size > 0.15 && gi.size < 1.85) ? gi.size : 1;
             cGroups.push({ tabs, active: pick(tabs, gi && gi.active), size });
@@ -3191,7 +3196,29 @@
     }
     // 视图状态（暂停 / 快照 / 开着的标签）就在 DOC 里，这类改动本身也算"未落盘"。
     // 成品侧此刻没有别的待落盘改动时顺手写盘；有的话留着 —— 不能替用户把待保存的删格/调参一起交了。
-    function viewAutoSave(clean) { if (clean) saveDoc(false); }
+    // 视图状态落盘：panels/paused/shots/expanded/input/render。
+    // **不再要求存档干净**——旧实现 gated 在 !archiveDirty()，带着未保存调参时切标签/换源/
+    // 展开目录的面板状态全被静默丢弃，刷新即回退（"active 没被关照到"的真凶）。
+    // 解法：charts 用磁盘基线（lastSaved 里的），未保存的调参/草稿不会被顺手带出去；
+    // 存档脏不脏仍由 entryDocJson(DOC) vs lastSaved 如实表达，互不干扰。
+    // 收敛条件改为"view 不再变"（charts 恒为基线，不能用 DOC 全文判——脏存档下永远不等）。
+    let viewSaving = false;
+    function viewAutoSave() {
+        if (storeState === 'load') return;                 // 文档还没从服务端回来，别拿空基线覆盖
+        if (viewSaving) return;                            // 在途：等这次完成后由尾部补发
+        let base = null;
+        try { base = JSON.parse(lastSaved); } catch (e) { base = null; }
+        if (!base || !Array.isArray(base.charts)) base = { v: DOC_V, charts: DOC.charts, view: emptyView() };
+        const doc = { v: DOC_V, charts: base.charts, view: DOC.view };
+        const sentView = JSON.stringify(DOC.view);
+        viewSaving = true;
+        saveDocToServer(doc, true).then((ok) => {
+            viewSaving = false;
+            if (ok) { lastSaved = JSON.stringify({ v: DOC_V, charts: base.charts, view: JSON.parse(sentView) }); refreshDirty(); }
+            // 在途期间 view 又变了 → 补一次（view 停变即收敛；与 charts 无关，不会死循环）
+            if (ok && JSON.stringify(DOC.view) !== sentView) viewAutoSave();
+        });
+    }
     // 各面板的标签状态进存档：内容面板照抄，右栏剔除自由草稿（它不是文档条目）。
     // 活跃项也一起记：重开时回到上次看到的那一条。
     function savePanels() {
@@ -3821,7 +3848,7 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r13';
+    const ST_BUILD = 'r14';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);
