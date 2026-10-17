@@ -1,0 +1,13 @@
+{
+  "title": "原始 SFM 数据 副本",
+  "desc": "",
+  "stages": [
+    {
+      "id": "input",
+      "on": true,
+      "p": {
+        "src": "spec.fft"
+      }
+    }
+  ]
+}

@@ -155,6 +155,20 @@
       "title": "原始 SFM 数据 副本",
       "desc": "",
       "stages": []
+    },
+    {
+      "id": "InputSwitch",
+      "title": "原始 SFM 数据 副本",
+      "desc": "",
+      "stages": [
+        {
+          "id": "input",
+          "on": true,
+          "p": {
+            "src": "spec.fft"
+          }
+        }
+      ]
     }
   ],
   "view": {
@@ -169,7 +183,8 @@
       "content/Favorates/",
       "content/Recents/",
       "content/ViewState/",
-      "content/Templates/"
+      "content/Templates/",
+      "content/My dsps/"
     ],
     "panels": {
       "center": {
@@ -177,9 +192,13 @@
           {
             "tabs": [
               "content/Templates/input.json",
-              "content/Templates/inv.json"
+              "content/Templates/inv.json",
+              "content/My dsps/",
+              "content/My dsps/u1.json",
+              "content/Templates/",
+              "content/My dsps/InputSwitch.json"
             ],
-            "active": "content/Templates/input.json",
+            "active": "content/My dsps/InputSwitch.json",
             "size": 1
           }
         ],
@@ -189,12 +208,14 @@
         "tabs": [
           "untitled-3",
           "untitled",
-          "untitled-9"
+          "untitled-9",
+          "InputSwitch"
         ],
-        "active": "untitled-3"
+        "active": "InputSwitch"
       }
     },
     "render": {
+      "content/My dsps/InputSwitch.json": "line",
       "content/My dsps/untitled.json": "line",
       "content/Templates/inv+log+rescale.json": "bars",
       "content/Templates/inv+pow+rescale.json": "line",
