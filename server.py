@@ -1012,32 +1012,49 @@ def api_rename():
 
 
 # ---- 画布快照：暂停时前端把画布 toDataURL 出的 PNG 交给后端落盘，恢复播放时删掉 ----
-SHOT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.png$")
+SHOT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+\.(?:png|json)$")   # .json = 与 PNG 配对的旁挂数据
 MAX_SHOT_BYTES = 4 * 1024 * 1024     # 单张快照上限；超了拒绝写入（画布导出通常只有几十 KB）
+MAX_SHOT_META_BYTES = 2 * 1024 * 1024  # 旁挂 JSON 上限（12×250 个浮点 ≈ 30KB，留足余量）
 
 
 @app.route("/api/shots/<path:name>", methods=["GET", "POST", "DELETE"])
 def api_shot(name):
     """content/Snapshots/<name> 的读 / 写 / 删；GET 直接返回 PNG 本体（前端 <img> 直接加载）。
 
-    POST 体 = { data: 'data:image/png;base64,...' }（canvas.toDataURL 的原样输出）。
-    落盘同样先写 .tmp 再改名：任何时候读到的都是完整的 PNG。
+    POST 体 = { data: 'data:image/png;base64,...', meta: {...} }：
+      data 是 canvas.toDataURL 的原样输出；meta 可选 —— 给了就顺带写一份同名的
+      <name>.json（画这张图用的数据 + 链 + 窗口参数），PNG 与它永远成对。
+    落盘同样先写 .tmp 再改名：任何时候读到的都是完整的文件。
     """
     if not SHOT_NAME_RE.match(name or ""):
         return jsonify({"error": "快照文件名不合法"}), 400
     p = os.path.join(SHOT_DIR, name)
+    side = os.path.join(SHOT_DIR, name[:-4] + ".json") if name.endswith(".png") else None
     if request.method == "GET":
         if not os.path.isfile(p):
             return jsonify({"error": "没有这张快照"}), 404
-        return send_from_directory(SHOT_DIR, name, mimetype="image/png")
+        mt = "image/png" if name.endswith(".png") else "application/json"
+        return send_from_directory(SHOT_DIR, name, mimetype=mt)
     if request.method == "DELETE":
-        try:
-            os.remove(p)
-        except FileNotFoundError:
-            pass
-        except OSError as e:
-            return jsonify({"error": f"删除失败：{e}"}), 500
-        return jsonify({"ok": True, "name": name})
+        # 删 PNG 时连旁挂 JSON 一起删（两半要成对）。JSON 删失败只记警告不报 500：
+        # Windows 上刚 GET 完同一份文件，句柄可能还没释放（0x20 共享冲突），
+        # 这时把 PNG 的删除结果一起判失败反而更糟 —— 孤儿 JSON 会在下次快照时被覆盖。
+        def _rm(q):
+            try:
+                os.remove(q)
+                return None
+            except FileNotFoundError:
+                return None
+            except OSError as e:
+                return str(e)
+
+        err = _rm(p)
+        if err:
+            return jsonify({"error": f"删除失败：{err}"}), 500
+        warn = _rm(side) if side else None
+        return jsonify({"ok": True, "name": name, "metaRemoved": not warn, "warning": warn or ""})
+    if not name.endswith(".png"):
+        return jsonify({"error": "POST 只能写 .png"}), 400
     body = request.get_json(silent=True)
     data = body.get("data") if isinstance(body, dict) else None
     if not isinstance(data, str) or not data.startswith("data:image/png;base64,"):
@@ -1060,7 +1077,28 @@ def api_shot(name):
         except OSError:
             pass
         return jsonify({"error": f"写入失败：{e}"}), 500
-    return jsonify({"ok": True, "file": SHOT_PREFIX + name, "url": "/api/shots/" + name})
+    # 旁挂数据：PNG 是"看到的那张图"，这份 JSON 是"画出它的数据"（12 音级 × 250 列的 ring）
+    meta = body.get("meta") if isinstance(body, dict) else None
+    meta_name = None
+    if isinstance(meta, dict):
+        try:
+            txt = json.dumps({"png": name, **meta}, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            txt = None
+        if txt is not None and len(txt.encode("utf-8")) <= MAX_SHOT_META_BYTES:
+            mtmp = side + ".tmp"
+            try:
+                with open(mtmp, "w", encoding="utf-8") as f:
+                    f.write(txt)
+                os.replace(mtmp, side)
+                meta_name = name[:-4] + ".json"
+            except OSError:
+                try:
+                    os.remove(mtmp)
+                except OSError:
+                    pass
+    return jsonify({"ok": True, "file": SHOT_PREFIX + name, "url": "/api/shots/" + name,
+                    "meta": (SHOT_PREFIX + meta_name) if meta_name else None})
 
 
 @app.route("/api/templates")
