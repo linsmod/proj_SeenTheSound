@@ -5,7 +5,9 @@
     {
       "id": "lowpass",
       "on": true,
-      "p": {},
+      "p": {
+        "tau": 0.25
+      },
       "collapsed": false
     }
   ]

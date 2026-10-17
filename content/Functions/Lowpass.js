@@ -22,8 +22,8 @@ registerFunction({
   tags: 'filter lowpass 平滑 ema iir 滤波',
 
   paramSchema: [
-    { name: 'fc', label: '截止Hz', type: 'number', default: 2,
-      control: { type: 'NumberBox', fractionDigits: 1, step: 0.5, min: 0.1, max: 20 } },
+    { name: 'tau', label: '时间常数s', type: 'number', default: 0.25,
+      control: { type: 'NumberBox', fractionDigits: 2, step: 0.05, min: 0.02, max: 2 } },
   ],
 
   f: (a, p, fs) => {
@@ -36,8 +36,8 @@ registerFunction({
         : Math.min(0.25, Math.max(0.001, (fs.TS - rec.t) / 1000));
     rec.t = fs.TS;
 
-    const fc = Number.isFinite(p.fc) ? Math.max(0.05, p.fc) : 2;   // 脏存档兜底：fc 不合法回默认
-    const alpha = 1 - Math.exp(-2 * Math.PI * fc * dt);
+    const tau = Number.isFinite(p.tau) ? Math.max(0.02, p.tau) : 0.25;   // 脏存档兜底
+    const alpha = 1 - Math.exp(-dt / tau);
     for (let i = 0; i < a.length; i++) {
       rec.y[i] += alpha * (a[i] - rec.y[i]);   // 显式首帧起步（rec.y 已拷贝 a），不存在 || 判零问题
       a[i] = rec.y[i];                          // 就地改写 a（副本），交给下一级

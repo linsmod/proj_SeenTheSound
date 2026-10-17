@@ -15,7 +15,9 @@
         {
           "id": "lowpass",
           "on": true,
-          "p": {},
+          "p": {
+            "tau": 0.25
+          },
           "collapsed": false
         }
       ]
@@ -141,6 +143,12 @@
           "p": {}
         }
       ]
+    },
+    {
+      "id": "untitled-9",
+      "title": "原始 SFM 数据 副本",
+      "desc": "",
+      "stages": []
     }
   ],
   "view": {
@@ -154,8 +162,8 @@
       "content/Compares/",
       "content/Favorates/",
       "content/Recents/",
-      "content/Snapshots/",
-      "content/ViewState/"
+      "content/ViewState/",
+      "content/Templates/"
     ],
     "panels": {
       "center": {
@@ -181,9 +189,10 @@
               "content/My dsps/untitled-4.json",
               "content/My dsps/untitled-6.json",
               "content/Templates/inv.json",
-              "content/ViewState/dsp-lab.json"
+              "content/ViewState/dsp-lab.json",
+              "content/My dsps/untitled-9.json"
             ],
-            "active": "content/ViewState/dsp-lab.json",
+            "active": "content/Templates/inv.json",
             "size": 1
           }
         ],
@@ -192,9 +201,10 @@
       "right": {
         "tabs": [
           "untitled-3",
-          "untitled"
+          "untitled",
+          "untitled-9"
         ],
-        "active": "untitled"
+        "active": "untitled-9"
       }
     },
     "render": {

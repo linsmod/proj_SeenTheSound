@@ -500,6 +500,7 @@ def sse_stream(cap, spec):
     gate = OnsetGate(cap.fs, spec.bin_freqs, a4=GATE_HOLDER["a4"]) if GATE_ENABLED else None
     GATE_HOLDER["obj"] = gate
     last_t = time.perf_counter()
+    wave_step = max(1, cap.fs // 2000)   # 波形抽取步长：fs/2000 ≈ 2kHz 包络，波形显示足够
     while True:
         t0 = time.perf_counter()
         x = cap.latest(spec.window)
@@ -526,6 +527,14 @@ def sse_stream(cap, spec):
             g = gate.process(spec.last_mags, dt)
             payload["gate"] = base64.b64encode(
                 np.round(g * 255.0).astype(np.uint8).tobytes()).decode()
+
+        # ---- 原始波形：峰保持抽取，每帧只发增量段（客户端按 wHz 自己拼环形缓冲）----
+        if x.size >= wave_step:
+            n = x.size // wave_step
+            seg = x[: n * wave_step].reshape(n, wave_step)
+            peak = seg[np.arange(n), np.abs(seg).argmax(axis=1)].astype(np.float32)
+            payload["w"] = base64.b64encode(peak.tobytes()).decode()
+            payload["wHz"] = cap.fs / wave_step
 
         if spec.kind == "cqt":
             payload["freqs"] = spec.bin_freqs.tolist()
@@ -631,6 +640,51 @@ def stream():
 # 存档跟着项目走（换浏览器、清缓存都不丢），也方便直接用编辑器/git 看 diff。
 # 落盘用"先写临时文件再改名"的原子替换：写到一半断电不会留下半个坏 JSON。
 DOC_PATH = os.path.join(HERE, "content", "ViewState", "dsp-lab.json")
+
+
+# ---------- 数据源元数据：流水线里有哪些原始数据、在哪个接口、什么格式 ----------
+# 页面据此展示"数据源清单"，并（后续阶段）把链的输入从写死的 SFM 换成这里列出的任一 source。
+def _sources_meta():
+    spec_dim = {"name": "bin", "unit": "Hz", "axis": "freqs"}
+    if SPEC is not None:
+        spec_dim["size"] = int(len(SPEC.bin_freqs))      # bin 数随 CQT/FFT 模式变化
+    return {"sources": [
+        {
+            "id": "spec.fft", "label": "频谱(dB)",
+            "iface": "/stream#s", "fmt": "table", "dtype": "u8",
+            "dims": [spec_dim, {"name": "t", "unit": "帧"}],
+            "rate": FPS, "shape": "vec12", "status": "live",
+            "note": "每帧 FFT → dBFS → 0..255（可 A 计权 + EMA 平滑）；Hz 轴走 payload.freqs(CQT) / binHz(FFT)。DSP 实验室按音级折叠（pcBins 内 u8 均值/255）当链输入",
+        },
+        {
+            "id": "gate.grid", "label": "门控包络(AHDSR)",
+            "iface": "/stream#gate", "fmt": "table", "dtype": "u8",
+            "dims": [{"name": "zone", "size": 9, "unit": "音区"}, {"name": "pc", "size": 12, "unit": "音级"}, {"name": "t", "unit": "帧"}],
+            "rate": FPS, "shape": "vec12",
+            "status": "live" if GATE_ENABLED else "dormant",
+            "note": "逐格 onset 门控，9 音区 × 12 音级，行主序 z*12+pc；DSP 实验室按音级取 9 音区最大值折成 12 通道。--no-gate 关闭",
+        },
+        {
+            "id": "sfm.matrix", "label": "SFM 矩阵（客户端合成）",
+            "iface": "client:updateBuffers", "fmt": "table", "dtype": "f32",
+            "dims": [{"name": "pitch", "size": 12, "unit": "音名"}, {"name": "t", "unit": "帧"}],
+            "rate": FPS, "shape": "vec12", "status": "live",
+            "note": "由 spec.fft 按音级分拣 + 平坦窗滑窗合成（写入时冻结）；当前链的输入就是它",
+        },
+        {
+            "id": "wave.pcm", "label": "原始波形（峰保持抽取）",
+            "iface": "/stream#w", "fmt": "series", "dtype": "f32",
+            "dims": [{"name": "sample", "unit": "点"}],
+            "rate": round((globals().get("CAP").fs if globals().get("CAP") else 48000) / max(1, (globals().get("CAP").fs if globals().get("CAP") else 48000) // 2000)),
+            "shape": "pcm", "status": "live",
+            "note": "每帧随流下发峰保持抽取段（fs/2000 ≈ 2kHz，f32 有符号峰，客户端自己拼环形缓冲）；单通道，暂不能当链输入，供波形显示用",
+        },
+    ]}
+
+
+@app.route("/api/sources")
+def api_sources():
+    return jsonify(_sources_meta())
 
 
 @app.route("/api/doc", methods=["GET"])

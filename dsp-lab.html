@@ -185,6 +185,10 @@
     /* 标签条末尾的分屏按钮：只在单组时出现 */
     .paneadd { flex: none; align-self: center; width: 20px; height: 18px; margin-left: 2px; padding: 0; background: transparent; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; color: #6d7fa6; font-size: 12px; line-height: 1; cursor: pointer; }
     .paneadd:hover { background: #263a60; color: #cbeeff; border-color: rgba(74,224,255,0.45); }
+    /* 输入源选择器：顶栏里一个小 select，宽度跟当前选项走 */
+    .isrc { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #8fa2c8; }
+    .isrc select { background: #0e1630; color: #cbeeff; border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; font-size: 12px; padding: 2px 4px; max-width: 170px; }
+    .isrc select:focus { outline: 1px solid rgba(74,224,255,0.45); }
     /* 空态：没有打开任何编辑目标时只留提示块（含「自由探索」入口），其余控件全部收起 */
     .lab .idle { display: none; padding: 22px 12px; font-size: 12px; line-height: 1.8; color: #5a6c94; text-align: center; }
     .lab.idle .idle { display: block; }
@@ -198,6 +202,14 @@
     .lab input.ttl { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: #0a1022; color: #e8eefc; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 13px; font-weight: 700; padding: 2px 4px; }
     .lab textarea.dsc { flex: none; width: 100%; box-sizing: border-box; margin-bottom: 4px; background: #0a1022; color: #8fa2c8; border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; font-size: 11px; padding: 2px 4px; resize: vertical; }
     /* 页面自绘模态（不用浏览器原生 dialog / alert / confirm）：遮罩 + 面板，点遮罩或 Esc = 取消 */
+    /* 数据源清单表（/api/sources 的可视化）：流水线里有哪些原始数据、在哪个接口、什么格式 */
+    .src-tbl { border-collapse: collapse; width: 100%; font-size: 11px; color: #bcc8e8; }
+    .src-tbl th, .src-tbl td { border: 1px solid rgba(255,255,255,0.12); padding: 4px 8px; text-align: left; vertical-align: top; }
+    .src-tbl th { background: #141d34; color: #8fa2c8; font-weight: 600; white-space: nowrap; }
+    .src-tbl td.mono, .src-tbl .mono { font-family: Consolas, monospace; color: #8fa2c8; white-space: nowrap; }
+    .src-tbl .st-live { color: #7fe0a8; }
+    .src-tbl .st-dormant { color: #8fa2c8; }
+    .src-tbl .st-todo { color: #ffb347; }
     .modal { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(4,8,18,0.62); }
     .modal[hidden] { display: none; }
     .modal-panel { box-sizing: border-box; background: #0e1630; color: #bcc8e8; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 14px 16px 12px; min-width: 340px; max-width: 460px; box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
@@ -259,6 +271,10 @@
     </span>
     <span class="status" id="status">⏳ 连接后端…</span>
     <a href="/">← 主面板</a>
+    <button class="lbtn" id="sourcesBtn" type="button" title="流水线里有哪些原始数据：接口 / 格式 / 维度 / 状态">数据源</button>
+    <label class="isrc" title="链的输入源：各源都是 12 音级 × 250 列同布局、0~1 同值域，切换即时生效（画布接着滚动，不用重开）">输入
+        <select id="inputSel"></select>
+    </label>
     <div class="legend" id="legend" title="12 个音级的配色，各图共用（画线不再逐条标音名）"></div>
 </div>
 <div class="wrap">
@@ -437,7 +453,7 @@
     //   center（内容面板）的 key = content/ 下的路径（文件或目录）；right（编辑器）的 key = 条目 id。
     function emptyPanels() { return { center: { tabs: [], active: '' }, right: { tabs: [], active: '' } }; }
     // expanded：目录的展开清单（目录默认收起，只记展开的）；paused/shots/panels 同理，都是视图状态
-    function emptyView() { return { paused: [], shots: {}, expanded: [], panels: emptyPanels(), render: {} }; }
+    function emptyView() { return { paused: [], shots: {}, expanded: [], panels: emptyPanels(), render: {}, input: 'sfm.matrix' }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
@@ -451,6 +467,8 @@
         if (Array.isArray(raw.expanded)) {
             v.expanded = raw.expanded.filter((d) => typeof d === 'string' && DIR_KEY_RE.test(d) && d !== 'content/');
         }
+        // 链输入源：只认注册表里有的（INPUT_SRC 在下方定义，调用发生在脚本求值后，没问题）
+        if (typeof raw.input === 'string' && INPUT_SRC[raw.input]) v.input = raw.input;
         // 各面板的标签：center 收 content/ 下的路径（文件或目录），right 只收这一份存档认得的条目 id。
         // 去重 + 截断都做一遍（存档是手写 / 老版本产的，形态不可信）；active 落空就退回第一个。
         const dedup = (list, ok) => {
@@ -619,7 +637,19 @@
         syncEditorInputs();
         labSync(true);
         applyView();          // 还原播放状态 + 把存档里的快照画回画布
+        restoreInput();       // 存档里存过输入源 → 现在才拿得到（initInputSel 执行时文档多半还没回来）
         refreshDirty();
+    }
+    // 从（已消毒的）视图存档恢复输入源选择；选择器 DOM 还没建好时只摆状态，initInputSel 会照它摆 UI
+    function restoreInput() {
+        const want = (DOC.view && INPUT_SRC[DOC.view.input]) ? DOC.view.input : null;
+        if (!want || want === inputSrc) return;
+        const cur = document.querySelector(`#inputSel option[value="${want}"]`);
+        if (cur && cur.disabled) return;      // 存的是 gate 但这次 --no-gate → 保持现状
+        inputSrc = want;
+        sfmFillLines();
+        const sel = document.getElementById('inputSel');
+        if (sel && cur) sel.value = want;
     }
 
 
@@ -672,7 +702,7 @@
     }
 
     // ---------- 现役处理核心：逐列推进（取代每帧整窗重算） ----------
-    // 数据布局与 sfmDisp 一致：**绝对环形下标**。第 i 列的输入 = sfmDisp[pc*CHART_N + i]，
+    // 数据布局与各源缓冲一致：**绝对环形下标**。第 i 列的输入 = inputBuf()[pc*CHART_N + i]，
     // 输出写回 ch.out[pc*CHART_N + i]；画图时用 ringMap 把窗口位置 p 映射回绝对下标。
     //
     // 为什么可以逐列：现有算子都是"逐帧纯函数"，第 i 列的输出只取决于第 i 列的输入。
@@ -750,7 +780,8 @@
     // 算一列（绝对下标 idx）：取输入 → DSPRun → 夹紧写回 ch.out
     function runColumn(ch, idx) {
         const inp = new Float64Array(SFM_PC);        // 旧实现工作区是 Float64，保持同一精度路径
-        for (let pc = 0; pc < SFM_PC; pc++) inp[pc] = sfmDisp[pc * CHART_N + idx];
+        const src = inputBuf();                      // 当前输入源（三个源同布局同值域，链无感）
+        for (let pc = 0; pc < SFM_PC; pc++) inp[pc] = src[pc * CHART_N + idx];
         ch.st.INPUT = inp;
         let r;
         try { r = DSPRun(ch.st); }
@@ -823,7 +854,7 @@
                 const w = UIControls.WIDGETS[spec.widget] || UIControls.WIDGETS.NumberBox;
                 if (w) {
                     // fn 边界的求值上下文：当前帧的 12 音级（TopK 的 max=输入长度 用的就是它）
-                    const ctx = () => ({ input: Array.from({ length: SFM_PC }, (_, pc) => sfmDisp[pc * CHART_N + chartWrite]) });
+                    const ctx = () => ({ input: Array.from({ length: SFM_PC }, (_, pc) => inputBuf()[pc * CHART_N + chartWrite]) });
                     input = w(spec, {
                         get: () => spec.dst[spec.key],
                         commit,
@@ -892,8 +923,21 @@
     const sfmSl = new Float64Array(SFM_PC * CHART_N);
     const sfmSa = new Float64Array(SFM_PC * CHART_N);
     const sfmN  = new Float32Array(SFM_PC * CHART_N);
-    const sfmLines = new Float32Array(SFM_PC * CHART_N);   // 显示序缓存 = 冻结的 sfmDisp 重排
+    const sfmLines = new Float32Array(SFM_PC * CHART_N);   // （保留名）当前输入源的窗口序重排，自检基准在用
     const sfmDisp = new Float32Array(SFM_PC * CHART_N);    // 写入时冻结的显示 SFM（通道主序，下标 pc*CHART_N+idx）
+    // ---------- 链输入源（P2）：三个可选源，全部 12 音级 × CHART_N 同布局、同 0~1 值域 ----------
+    // 链和画布完全不感知换了源：runColumn / 自检只认 inputBuf()。写入点都在 updateBuffers 的列节拍里。
+    const specDisp = new Float32Array(SFM_PC * CHART_N);   // spec.fft：按音级折叠（pcBins 内 u8 均值 / 255）
+    const gateDisp = new Float32Array(SFM_PC * CHART_N);   // gate.grid：9 音区对同一音级取 max（/255）
+    let gateData = null, gateZones = 9, gateSeen = false;  // 流里出现过 gate 字段（--no-gate 时恒 null → 选项置灰）
+    let waveBuf = null, waveHz = 0, waveW = 0;             // wave.pcm：2 秒环形缓冲（仅存着，波形显示用，喂不进 vec12 链）
+    const INPUT_SRC = {
+        'sfm.matrix': { buf: sfmDisp, label: 'SFM 平坦度' },
+        'spec.fft': { buf: specDisp, label: '频谱电平（音级折叠）' },
+        'gate.grid': { buf: gateDisp, label: '门控增益（9 音区 max）' },
+    };
+    let inputSrc = 'sfm.matrix';       // 由视图存档恢复（initInputSel）；chooseInput() 改
+    const inputBuf = () => (INPUT_SRC[inputSrc] || INPUT_SRC['sfm.matrix']).buf;
     let sfmWinK = 10;                 // 平坦度时间窗（采样数，50Hz；由全局控件改秒数；写入时冻结，改窗只影响新采样）
     let chartWrite = 0, chartAccum = 0, isRunning = false, lastTs = 0;
     // 累计写入了多少列（单调递增）。判断"某块画布落后多少"只认它：
@@ -930,19 +974,36 @@
                 const o = pc * CHART_N + chartWrite;
                 sfmSl[o] = sl; sfmSa[o] = sa; sfmN[o] = n;
             }
+            // spec.fft 源：同一列节拍按音级折叠（u8 均值 / 255 → 0~1 电平），与 SFM 共享 pcBins 口径
+            for (let pc = 0; pc < SFM_PC; pc++) {
+                const bins = pcBins[pc];
+                let m = 0;
+                for (let k = 0; k < bins.length; k++) m += freqData[bins[k]];
+                specDisp[pc * CHART_N + chartWrite] = bins.length ? m / bins.length / 255 : 0;
+            }
+            // gate.grid 源：9 音区对同一音级取 max（任一音区被触发就算），--no-gate 时 gateData 为 null → 恒 0
+            for (let pc = 0; pc < SFM_PC; pc++) {
+                let g = 0;
+                for (let z = 0; z < gateZones; z++) {
+                    const v = gateData ? gateData[z * SFM_PC + pc] : 0;
+                    if (v > g) g = v;
+                }
+                gateDisp[pc * CHART_N + chartWrite] = g / 255;
+            }
             freezeSfmDisp(chartWrite);   // 显示 SFM 写入时冻结（窗恒为满窗，历史值不随窗口滑动改变）
             chartWrite = (chartWrite + 1) % CHART_N;
             chartSeq++;
         }
     }
     function sfmFillLines() {
-        // 显示序重排：只读写入时冻结的 sfmDisp（历史值永不重算）。
+        // 显示序重排：只读写入时冻结的源缓冲（历史值永不重算）。
         // 现役渲染改走绝对下标（stepChart 直接写 ch.out[i]），这份窗口序数组只剩
-        // dspSelfTest 的基准对照在用 —— 留着它，等于留了一条随时可复算的真相。
+        // dspSelfTest 的基准对照在用 —— 跟随当前输入源（inputBuf），等于留了一条随时可复算的真相。
+        const src = inputBuf();
         for (let pc = 0; pc < SFM_PC; pc++) {
             const base = pc * CHART_N;
             for (let p = 0; p < chartCount; p++) {
-                sfmLines[base + p] = sfmDisp[base + ((chartWrite + p) % CHART_N)];
+                sfmLines[base + p] = src[base + ((chartWrite + p) % CHART_N)];
             }
         }
         syncRingMap();
@@ -956,6 +1017,29 @@
             const bin = atob(msg.s);
             if (!freqData || freqData.length !== bin.length) freqData = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) freqData[i] = bin.charCodeAt(i);
+            // gate.grid 源：9 音区 × 12 音级 u8（行主序 z*12+pc）。--no-gate 时字段不存在 → gateData 恒 null。
+            // 首次见到就把输入选择器里置灰的那项放开（有真数据才有选它的意义）。
+            if (msg.gate) {
+                const gb = atob(msg.gate);
+                const zn = Math.floor(gb.length / SFM_PC);
+                if (zn > 0 && zn * SFM_PC === gb.length) {
+                    gateZones = zn;
+                    if (!gateData || gateData.length !== gb.length) gateData = new Uint8Array(gb.length);
+                    for (let i = 0; i < gb.length; i++) gateData[i] = gb.charCodeAt(i);
+                    if (!gateSeen) { gateSeen = true; enableGateOption(); }
+                }
+            }
+            // wave.pcm 源：峰保持抽取段（f32 LE）按 wHz 拼进 2 秒环形缓冲。单通道喂不进 vec12 链，
+            // 先只存着 —— 将来加波形显示视图时这里的数据已经是热的。
+            if (msg.w && msg.wHz) {
+                if (!waveBuf || waveHz !== msg.wHz) { waveHz = msg.wHz; waveBuf = new Float32Array(Math.round(waveHz * 2)); waveW = 0; }
+                const wb = atob(msg.w);
+                const u8 = new Uint8Array(wb.length);
+                for (let i = 0; i < wb.length; i++) u8[i] = wb.charCodeAt(i);
+                const dv = new DataView(u8.buffer);
+                const n = Math.floor(wb.length / 4);
+                for (let i = 0; i < n; i++) { waveBuf[waveW] = dv.getFloat32(i * 4, true); waveW = (waveW + 1) % waveBuf.length; }
+            }
             if (msg.freqs) {
                 if (!binFreqs || binFreqs.length !== msg.freqs.length) binFreqs = new Float64Array(msg.freqs.length);
                 for (let i = 0; i < msg.freqs.length; i++) binFreqs[i] = msg.freqs[i];
@@ -2735,8 +2819,9 @@
     function ask(opts) {
         return new Promise((resolve) => {
             modalTitleEl.textContent = opts.title || '';
-            modalBodyEl.textContent = opts.body || '';
-            modalBodyEl.hidden = !opts.body;
+            if (opts.bodyNode) { modalBodyEl.textContent = ''; modalBodyEl.appendChild(opts.bodyNode); }   // 富内容（表格等）
+            else modalBodyEl.textContent = opts.body || '';
+            modalBodyEl.hidden = !opts.body && !opts.bodyNode;
             modalFootEl.textContent = '';
             for (const b of (opts.buttons || [])) {
                 const el = document.createElement('button');
@@ -3197,6 +3282,67 @@
         labSync(true);
     });
     document.getElementById('labClear').addEventListener('click', () => { if (DRAFT) { DRAFT.stages.length = 0; labSync(true); } });
+    // ---------- 数据源清单（/api/sources）：流水线里有哪些原始数据、在哪个接口、什么格式 ----------
+    // P1 只做"看得见"；P2 把链的 INPUT 换成这里选中的 source（形状联动随之生效）
+    async function showSources() {
+        let data;
+        try {
+            const res = await fetch('/api/sources', { cache: 'no-store' });
+            data = await res.json();
+        } catch (e) { await ask({ title: '数据源', body: '拉取 /api/sources 失败：' + (e && e.message || e) }); return; }
+        const tbl = document.createElement('table');
+        tbl.className = 'src-tbl';
+        const head = tbl.insertRow();
+        for (const h of ['源', '接口', '格式', '维度', '速率', '状态', '说明']) {
+            const th = document.createElement('th'); th.textContent = h; head.appendChild(th);
+        }
+        for (const s of (data.sources || [])) {
+            const tr = tbl.insertRow();
+            const put = (txt, cls) => { const d = tr.insertCell(); if (cls) d.className = cls; d.textContent = txt; };
+            const dims = (s.dims || []).map((d) => d.name + (d.size != null ? `[${d.size}]` : '') + (d.unit ? `(${d.unit})` : '')).join(' × ');
+            put(s.label); put(s.id, 'mono'); put(s.iface || '—', 'mono');
+            put(s.fmt + ' / ' + s.dtype); put(dims); put(s.rate + '/s', 'mono');
+            put(s.status, 'st-' + s.status); put(s.note || '');
+        }
+        await ask({ title: '数据源（流水线的输入将来从这里选）', bodyNode: tbl, buttons: [{ text: '关闭', cls: 'primary', value: 1 }] });
+    }
+    document.getElementById('sourcesBtn').addEventListener('click', showSources);
+    window.dspSources = async () => console.table((await (await fetch('/api/sources', { cache: 'no-store' })).json()).sources);
+    // ---------- 输入源选择器 ----------
+    // 换源 = 换 inputBuf() 指向：三个源同布局同值域，画布接着滚，链和自检全部无感。
+    // 选择跟项目走（视图存档 v.input）—— 它决定"这些图画的是什么"，不是这台机器的偏好。
+    function chooseInput(id) {
+        if (!INPUT_SRC[id] || id === inputSrc) return;
+        const clean = !archiveDirty();
+        inputSrc = id;
+        viewOf().input = id;
+        sfmFillLines();          // 自检基准线立刻跟上来，别等下一帧
+        viewAutoSave(clean);
+    }
+    function enableGateOption() {
+        const o = document.querySelector('#inputSel option[value="gate.grid"]');
+        if (o) o.disabled = false;      // 流里见到 gate 字段（GATE_ENABLED）才有真数据
+    }
+    async function initInputSel() {
+        const sel = document.getElementById('inputSel');
+        let meta = null;
+        try { meta = await (await fetch('/api/sources', { cache: 'no-store' })).json(); } catch (e) { /* 清单拿不到就只剩占位，不挡主流程 */ }
+        // 先恢复存档里的选择（保存的时候 gate 可能还开着，这次启动 --no-gate → 回落 SFM）
+        inputSrc = (DOC.view && INPUT_SRC[DOC.view.input]) ? DOC.view.input : 'sfm.matrix';
+        for (const s of ((meta && meta.sources) || [])) {
+            if (s.shape !== 'vec12') continue;          // wave.pcm 是单通道波形，喂不进 12 通道的链
+            const o = document.createElement('option');
+            o.value = s.id;
+            o.textContent = s.label;
+            if (s.id === 'gate.grid' && !gateSeen) o.disabled = true;
+            sel.appendChild(o);
+        }
+        const cur = sel.querySelector(`option[value="${inputSrc}"]`);
+        if (!cur || cur.disabled) { inputSrc = 'sfm.matrix'; }
+        sel.value = inputSrc;
+        sel.addEventListener('change', () => chooseInput(sel.value));
+    }
+    initInputSel();
     // 全局播放控制
     document.getElementById('gPlay').addEventListener('click', () => setAllPaused(!allPaused()));
     syncEditorInputs();
@@ -3332,11 +3478,11 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r5';
+    const ST_BUILD = 'r6';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);
-        if (!quiet) console.info(`[selftest] build=${ST_BUILD}`);
+        if (!quiet) console.info(`[selftest] build=${ST_BUILD} source=${inputSrc}`);
         if (typeof compileChart !== 'function' || typeof DSPRun !== 'function') {
             console.warn('[selftest] 新运行时没加载 —— 检查 /content/Functions/*.js 是否 404');
             return null;
@@ -3423,7 +3569,7 @@
                     console.log(`[selftest] 差异画布 ${keyOf(ch) || '(右栏)'} · 链 ${stages.map((s) => s.id + (s.on ? '' : '·off')).join('+') || '(空链)'} · 帧 ${a.p} / 列 ${col} / ${NOTE_NAMES[a.pc]}`
                         + ` · 编译实例 [${ch.proc.instances.map((b) => b.id).join('+') || '0 个 → 整条旁路'}]`
                         + ` · lastSeq=${ch.lastSeq} / chartSeq=${chartSeq}`);
-                    console.log('  该列输入 sfmDisp :', dump((pc) => sfmDisp[pc * CHART_N + col]));
+                    console.log(`  该列输入 (${inputSrc}) :`, dump((pc) => inputBuf()[pc * CHART_N + col]));
                     console.log('  累积 ch.out      :', dump((pc) => ch.out[pc * CHART_N + col]));
                     console.log('  批算 ref         :', dump((pc) => ref[pc * CHART_N + a.p]));
                 }
