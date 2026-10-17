@@ -2104,6 +2104,10 @@
         applyDirExpand();
         viewAutoSave(clean);             // 展开状态也进存档（与暂停名单同一条路）
     }
+    function setDirExpanded(dir, on) {
+        if (isDirExpanded(dir) === !!on) return;
+        toggleDirExpanded(dir);
+    }
     function applyDirExpand() {
         for (const [dir, g] of dirGroups) {
             const open = isDirExpanded(dir);
@@ -2270,20 +2274,23 @@
         row.tabIndex = 0;
         row.title = isDir
             ? (canOpen
-                ? file + (canExpand ? '\n单击：打开这个目录的列表视图；双击（或点三角）：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
-                : file + '\n文件夹（没有 $treeNode.json）：只能展开 / 收起，不进内容面板')
+                ? file + (canExpand ? '\n单击：打开这个目录的列表视图并展开；点三角：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
+                : file + '\n文件夹（没有 $treeNode.json）：单击 = 展开 / 收起，不进内容面板')
             : file + '\n单击：打开这一条的链路视图；Shift 单击 = 范围选择，Ctrl 单击 = 加选';
+        // 一行只有一个主操作，双击不再单独绑事件。
+        // 双击 = 两次 click：第二次靠 ev.detail > 1 直接吞掉，动作只在第一击里做一次。
+        // （以前这里另绑了 dblclick 做展开，于是"单击打开 + 双击展开"互相打架：
+        //   纯文件夹连点两下 = 展开又收起，看着像没反应。）
         row.addEventListener('click', (ev) => {
-            if (ev.detail > 1) return;      // 双击的第二击：不重复导航，交给下面的 dblclick
+            if (ev.detail > 1) return;      // 双击的第二击：忽略，第一击已经做过动作了
             if (ev.shiftKey) { selectTreeRange(file); return; }               // Shift = 范围选择（不切视图）
             if (ev.ctrlKey || ev.metaKey) { toggleTreeSel(file); return; }    // Ctrl/Cmd = 加选 / 减选
             setTreeSel([file]);             // 普通单击：单选
             treeAnchor = file;
             if (!canOpen) { if (canExpand) toggleDirExpanded(file); return; }  // 纯文件夹：单击 = 展开 / 收起
             open({ file });
+            if (canExpand) setDirExpanded(file, true);   // 打开列表的同时展开它，省一次去点三角
         });
-        // 双击目录行 = 展开 / 收起；单击留给"打开列表视图"，不再顺带展开
-        if (canExpand) row.addEventListener('dblclick', (ev) => { ev.preventDefault(); toggleDirExpanded(file); });
         row.addEventListener('keydown', (ev) => {
             if (ev.key !== 'Enter' && ev.key !== ' ') return;
             ev.preventDefault();
