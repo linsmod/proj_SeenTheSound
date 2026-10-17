@@ -746,6 +746,33 @@ def _dsp_migrate_once():
 
 
 # ---- content/ 目录树：前端左栏的树据此渲染（目录结构 = 磁盘结构，文件只列 .json） ----
+TREE_NODE_NAME = "$treeNode.json"
+VIEW_NAMES = ("dsplistview", "dspview")     # 与前端 VIEWS 白名单一致
+
+
+def _dir_treenode(dirpath):
+    """目录级描述符 $treeNode.json → {text, viewtype}。
+
+    有它 = 这个目录可以被"打开"（按 viewtype 渲染）；没有 / 解析失败 / viewtype 不认识
+    = 纯文件夹，前端只让它展开收起，不进内容面板。
+    形态宽容：既认 `{...}` 也认 `[{...}]`（现有文件是单元素数组）。
+    """
+    try:
+        with open(os.path.join(dirpath, TREE_NODE_NAME), "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if isinstance(raw, list):
+        raw = raw[0] if raw and isinstance(raw[0], dict) else None
+    if not isinstance(raw, dict):
+        return None
+    vt = raw.get("viewtype")
+    if not isinstance(vt, str) or vt not in VIEW_NAMES:
+        return None
+    text = raw.get("text")
+    return {"text": text.strip() if isinstance(text, str) else "", "viewtype": vt}
+
+
 def _content_tree(dirpath, prefix):
     """递归扫一个目录 → 节点表：目录节点（带 children）在前，内容文件在后，各自按名排序。
 
@@ -763,8 +790,14 @@ def _content_tree(dirpath, prefix):
         p = os.path.join(dirpath, n)
         if os.path.isdir(p):
             child = prefix + n + "/"
-            dirs.append({"kind": "dir", "name": n, "path": child,
-                         "children": _content_tree(p, child)})
+            nd = {"kind": "dir", "name": n, "path": child,
+                  "children": _content_tree(p, child)}
+            tn = _dir_treenode(p)          # 目录描述符：有才带 treeNode，前端据此决定"能不能打开"
+            if tn:
+                nd["treeNode"] = tn
+            dirs.append(nd)
+        elif n.startswith("$"):
+            continue                       # $ 开头 = 元数据（$schema / $treeNode），不是内容条目
         elif n.endswith(ITEM_EXTS):
             item = _dir_item(dirpath, prefix, n)
             if not item:

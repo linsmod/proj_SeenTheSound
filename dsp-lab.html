@@ -59,6 +59,8 @@
     /* 模板行：非用户创建，只能「从模板新建」出自己的副本，所以整行压暗一档以示只读 */
     .tree .tnode.tpl .tn { color: #9fb0d6; }
     .tree .tnode.tpl .to { color: #6d7fa6; }
+    /* 纯文件夹（目录里没有 $treeNode.json）：只有导航职责，图标压暗一档以示"不可打开" */
+    .tree .tnode.noview .to { opacity: 0.5; }
     /* 中栏 = 编辑器组容器：组头（标签条）固定在上，组体（.pgbody）自己滚 */
     .mid { flex: 1 1 auto; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
     /* 右栏编辑器（dspEditorView）外壳：背景/圆角/描边/纵向流。
@@ -1114,6 +1116,9 @@
     const treeSel = new Set();               // 树里选中的路径集合（Shift/Ctrl 多选，纯 UI 状态、不进存档）
     let treeAnchor = '';                     // 范围选择的锚点（最近一次普通 / Ctrl 点击的那一行）
     const TREE = [];                         // /api/tree 拉回的目录/文件树（左栏渲染的唯一来源）
+    // 目录描述符（服务端读 content/ 下每个目录的 $treeNode.json）：path → { text, viewtype }
+    // **有这个文件 = 该目录可以被"打开"**；没有 = 纯文件夹，只能展开收起（单击不进内容面板）。
+    const DIR_META = new Map();
     const FILES = [];                        // 摊平后的 .json 条目（itemOf / itemsOf 的索引）
     const fileCache = new Map();             // file → 条目（单文件接口取回的、树清单里没有的）
     const treeFileNodes = new Map();         // file → { row, tn }，给 syncTreeFiles 就地刷选中态与标题
@@ -1147,6 +1152,8 @@
     // 标签标题：目录取末段，文件优先用磁盘条目里的标题，取不到退回文件名（stem）
     function docTitle(key) {
         if (key.endsWith('/')) {
+            const m = DIR_META.get(key);              // 目录标题与树上一致：描述符给了 text 就听它的
+            if (m && m.text) return m.text;
             const s = key.replace(/\/+$/, '');
             return s.slice(s.lastIndexOf('/') + 1) || relToRoot(key) || './';
         }
@@ -1506,6 +1513,8 @@
         let file = typeof s.file === 'string' ? s.file.trim() : '';
         if (!file) file = HOME_DIR;                              // 空 file = 回默认落地目录
         if ((s.panel || 'center') !== 'center') return;           // 目前只有中间面板参与
+        // 没声明 $treeNode.json 的目录 = 纯文件夹：不打开（它在树里只承担展开 / 收起的导航职责）
+        if (file.endsWith('/') && !dirOpenable(file)) return;
         let v = s.viewer || viewerOf(file);
         if (VIEWS.indexOf(v) < 0) v = viewerOf(file);             // viewer 名不认识 → 按 file 重推
         const p = paneOf(file);
@@ -1612,7 +1621,8 @@
     // 清单没拉到（离线）时一律不动 —— 宁可留一条打不开的标签，也不要清掉用户开着的视图。
     function pruneCenter() {
         if (!FILES.length) return;
-        const keep = (k) => k.endsWith('/') || !!itemOf(k);
+        // 目录标签也要看它还有没有 $treeNode.json：描述符被删掉 = 它退回纯文件夹，标签一并摘掉
+        const keep = (k) => (k.endsWith('/') ? dirOpenable(k) : !!itemOf(k));
         let changed = false;
         for (const g of center.groups) {
             const left = g.tabs.filter(keep);
@@ -1932,7 +1942,17 @@
             for (const nd of tree) if (nd && typeof nd.path === 'string') TREE.push(nd);
             FILES.length = 0;
             for (const t of files) if (t && typeof t.file === 'string') FILES.push(t);
-        } catch (e) { TREE.length = 0; FILES.length = 0; }
+            // 目录描述符索引：递归走一遍树（目录节点自带 treeNode，没声明的不进表）
+            DIR_META.clear();
+            const walk = (nodes) => {
+                for (const nd of nodes) {
+                    if (!nd || nd.kind !== 'dir') continue;
+                    if (nd.treeNode && typeof nd.treeNode.viewtype === 'string') DIR_META.set(nd.path, nd.treeNode);
+                    walk(nd.children || []);
+                }
+            };
+            walk(TREE);
+        } catch (e) { TREE.length = 0; FILES.length = 0; DIR_META.clear(); }
     }
     // 我的图以文件为准：把 content/My dsps/ 里的条目并进 DOC（右栏编辑器照旧按 id 找得到），
     // 文件里没有的那一格 = 已经在别处删掉了 → 从 DOC 摘掉。
@@ -2053,7 +2073,19 @@
     // 三角只管展开/收起，点行本身还是"打开这个目录的列表视图"（顺手把它展开）。
     // 每个目录 = 一个 .grp（目录行 + .kids 内容容器）：目录默认收起，给 .grp 加 collapsed 时 .kids 整块隐藏。
     const dirGroups = new Map();         // dir → { box, caret }，展开/收起就地刷，不重建整棵树
+    // 目录的 viewtype：有 $treeNode.json 才非空 → 非空才允许"打开"（渲染成列表视图）
+    function dirViewOf(dir) {
+        const m = DIR_META.get(dir);
+        return m ? m.viewtype : '';
+    }
+    // 一个描述符都没读到 = 服务端还是老版本（不发 treeNode）→ 退回"目录都能开"，别把导航锁死
+    function dirOpenable(dir) {
+        return DIR_META.size === 0 ? true : !!dirViewOf(dir);
+    }
+    // 目录在树上的名字：描述符给了 text 就听它的，否则取路径末段
     function dirLabel(dir) {
+        const m = DIR_META.get(dir);
+        if (m && m.text) return m.text;
         const s = dir.replace(/\/+$/, '');
         const i = s.lastIndexOf('/');
         return i < 0 ? s : s.slice(i + 1);
@@ -2212,6 +2244,9 @@
         row.className = 'tnode ' + cls;
         const isDir = cls === 'dir';
         const canExpand = isDir && expandable !== false;   // 空目录没有内容可展开 → 不给三角、不绑双击
+        // 目录能不能被"打开"取决于它有没有 $treeNode.json；没有就只是个文件夹（只能展开 / 收起）
+        const canOpen = !isDir || dirOpenable(file);
+        if (isDir && !canOpen) row.classList.add('noview');
         if (isDir) {
             if (canExpand) {
                 const caret = document.createElement('span');
@@ -2234,7 +2269,9 @@
         row.append(to, tn);
         row.tabIndex = 0;
         row.title = isDir
-            ? file + (canExpand ? '\n单击：打开这个目录的列表视图；双击（或点三角）：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
+            ? (canOpen
+                ? file + (canExpand ? '\n单击：打开这个目录的列表视图；双击（或点三角）：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
+                : file + '\n文件夹（没有 $treeNode.json）：只能展开 / 收起，不进内容面板')
             : file + '\n单击：打开这一条的链路视图；Shift 单击 = 范围选择，Ctrl 单击 = 加选';
         row.addEventListener('click', (ev) => {
             if (ev.detail > 1) return;      // 双击的第二击：不重复导航，交给下面的 dblclick
@@ -2242,11 +2279,17 @@
             if (ev.ctrlKey || ev.metaKey) { toggleTreeSel(file); return; }    // Ctrl/Cmd = 加选 / 减选
             setTreeSel([file]);             // 普通单击：单选
             treeAnchor = file;
+            if (!canOpen) { if (canExpand) toggleDirExpanded(file); return; }  // 纯文件夹：单击 = 展开 / 收起
             open({ file });
         });
         // 双击目录行 = 展开 / 收起；单击留给"打开列表视图"，不再顺带展开
         if (canExpand) row.addEventListener('dblclick', (ev) => { ev.preventDefault(); toggleDirExpanded(file); });
-        row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open({ file }); } });
+        row.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter' && ev.key !== ' ') return;
+            ev.preventDefault();
+            if (!canOpen) { if (canExpand) toggleDirExpanded(file); return; }
+            open({ file });
+        });
         row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openFileMenu(row, file); });
         treeFileNodes.set(file, { row, tn });
         return row;
