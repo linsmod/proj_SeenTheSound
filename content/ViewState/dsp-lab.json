@@ -184,15 +184,16 @@
       "content/Recents/",
       "content/ViewState/",
       "content/Templates/",
-      "content/Functions/Id.js",
-      "content/Functions/Input.js",
-      "content/Functions/Inv.js",
-      "content/Functions/Log.js",
       "content/Functions/Log01.js",
       "content/Functions/Lowpass.js",
-      "content/Functions/",
       "content/Functions/Pow.js",
-      "content/Functions/Rank.js"
+      "content/Functions/Rank.js",
+      "content/Functions/Rescale.js",
+      "content/Functions/Log.js",
+      "content/Functions/Inv.js",
+      "content/Functions/Input.js",
+      "content/Functions/Id.js",
+      "content/Functions/"
     ],
     "panels": {
       "center": {
@@ -210,9 +211,11 @@
               "content/Functions/Inv.js#inv",
               "content/Functions/Lowpass.js#lowpass",
               "content/Functions/Pow.js#pow",
-              "content/Functions/Rank.js#rank"
+              "content/Functions/Rank.js#rank",
+              "content/Functions/Rescale.js#rescale",
+              "content/Snapshots/content_My_dsps_untitled-3.json.json"
             ],
-            "active": "content/Functions/Rank.js#rank",
+            "active": "content/Templates/",
             "size": 1
           }
         ],
@@ -225,7 +228,7 @@
           "untitled-9",
           "InputSwitch"
         ],
-        "active": "InputSwitch"
+        "active": "untitled-3"
       }
     },
     "render": {

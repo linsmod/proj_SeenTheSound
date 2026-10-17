@@ -49,10 +49,14 @@
     .tree .tnode .tn-edit { flex: 1 1 auto; min-width: 0; box-sizing: border-box; background: #0a1022; color: #e8eefc; border: 1px solid #4ae0ff; border-radius: 4px; font-size: 12px; padding: 1px 4px; }
     .tree .grp.collapsed > .kids { display: none; }
     .tree .kids { padding-left: 10px; }
-    .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #bcc8e8; cursor: pointer; user-select: none; }
+    .tree .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; font-size: 12px; color: #8fa2c8; cursor: pointer; user-select: none; }
     .tree .tnode:hover { background: #17223f; }
-    .tree .tnode.sel { background: rgba(74,224,255,0.14); box-shadow: inset 0 0 0 1px rgba(74,224,255,0.45); color: #cbeeff; }
-    .tree .tnode .to { flex: none; width: 15px; color: #4ae0ff; }
+    .tree .tnode.sel { background: rgba(74,224,255,0.14); box-shadow: inset 0 0 0 1px rgba(74,224,255,0.45); color: #d7ecff; }
+    /* 选中 = 提亮（对比出"哪行是活跃的"）；未选中行统一 #a7b4d1 —— 一个亮度，无语义灰阶 */
+    /* 图标变暗用透明度（与暗底真混合，感知上才"沉得下去"），不用换灰阶——
+       不透明色再灰，与暗底的亮度对比仍被视觉拉大（同时对比效应） */
+    .tree .tnode .to { flex: none; width: 15px; color: #4ae0ff; opacity: 0.8; }
+    .tree .tnode:hover .to, .tree .tnode.sel .to { opacity: 0.85; }     /* 交互时只微调——亮色突变太吵 */
     .tree .tnode .tn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tree .tnode .tk { flex: none; font-size: 10px; color: #ffb347; }        /* ● 与出厂不同 */
     .tree .tnode .tk.p { color: #4ae0ff; }                                   /* ✎ 有未保存草稿 */
@@ -60,7 +64,7 @@
     .tree .tnode.tpl .tn { color: #9fb0d6; }
     .tree .tnode.tpl .to { color: #6d7fa6; }
     /* 纯文件夹（目录里没有 $treeNode.json）：只有导航职责，图标压暗一档以示"不可打开" */
-    .tree .tnode.noview .to { opacity: 0.5; }
+    /* 纯文件夹不做视觉降级：能不能打开由交互决定（单击无效果 / 双击展开），不在颜色上区分 */
     /* 中栏 = 编辑器组容器：组头（标签条）固定在上，组体（.pgbody）自己滚 */
     .mid { flex: 1 1 auto; min-width: 0; position: relative; display: flex; flex-direction: column; overflow: hidden; }
     /* 右栏编辑器（dspEditorView）外壳：背景/圆角/描边/纵向流。
@@ -185,11 +189,9 @@
     /* 标签条末尾的分屏按钮：只在单组时出现 */
     .paneadd { flex: none; align-self: center; width: 20px; height: 18px; margin-left: 2px; padding: 0; background: transparent; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; color: #6d7fa6; font-size: 12px; line-height: 1; cursor: pointer; }
     .paneadd:hover { background: #263a60; color: #cbeeff; border-color: rgba(74,224,255,0.45); }
-    /* 算子源码文件（实体，可展开元数据）与虚拟算子叶子 */
-    .tnode.src { color: #8fa2c8; }
-    .tnode.src .to { font-size: 11px; }
-    .tnode.op { color: #a9bcdc; }
-    .tnode.op .to { color: #6ea8d8; font-size: 12px; }
+    /* 算子源码文件与虚拟算子叶子：颜色完全吃树基调（不加特例色），
+       与普通内容行的区分靠图标（📜 / ƒ），不靠变灰（灰 = 不可用，会误导） */
+    .tnode.op .to { font-size: 12px; }
     /* 输入源选择器：顶栏里一个小 select，宽度跟当前选项走 */
     .isrc { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #8fa2c8; }
     .isrc select { background: #0e1630; color: #cbeeff; border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; font-size: 12px; padding: 2px 4px; max-width: 170px; }
@@ -2501,7 +2503,6 @@
         // 目录能不能被"打开"取决于它有没有 $treeNode.json；没有就只是个文件夹（只能展开 / 收起）。
         // src 文件本身不打开（它没有视图）—— 单击只选中，双击展开元数据。
         const canOpen = isSrc ? false : (!isDir || dirOpenable(file));
-        if ((isDir || isSrc) && !canOpen) row.classList.add('noview');
         if (isDir || isSrc) {
             if (canExpand) {
                 const caret = document.createElement('span');
@@ -3677,7 +3678,7 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r8';
+    const ST_BUILD = 'r9';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);
