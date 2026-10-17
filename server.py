@@ -582,6 +582,19 @@ def uic_module(name):
     return resp
 
 
+# 图表渲染器（走势 / 柱状…）：同上，一个渲染器一个文件
+RDR_DIR = os.path.join(HERE, "content", "Renderers")
+
+
+@app.route("/content/Renderers/<path:name>")
+def rdr_module(name):
+    if not name.lower().endswith(".js"):
+        return jsonify({"ok": False, "error": "only .js is served here"}), 404
+    resp = send_from_directory(RDR_DIR, name, mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.route("/stream")
 def stream():
     return Response(sse_stream(CAP, SPEC),

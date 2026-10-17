@@ -318,6 +318,10 @@
 <!-- 参数控件组件库：契约（normalizeParam）→ 各控件（一个文件一个控件）；必须在 inline 之前 -->
 <script src="/content/UIControls/UIControls.js"></script>
 <script src="/content/UIControls/NumberBox.js"></script>
+<!-- 图表渲染器：走势 / 柱状…（一个渲染器一个文件，ChartRenderers 注册表） -->
+<script src="/content/Renderers/Renderers.js"></script>
+<script src="/content/Renderers/line.js"></script>
+<script src="/content/Renderers/bars.js"></script>
 <script>
 (function () {
     'use strict';
@@ -437,7 +441,7 @@
     //   center（内容面板）的 key = content/ 下的路径（文件或目录）；right（编辑器）的 key = 条目 id。
     function emptyPanels() { return { center: { tabs: [], active: '' }, right: { tabs: [], active: '' } }; }
     // expanded：目录的展开清单（目录默认收起，只记展开的）；paused/shots/panels 同理，都是视图状态
-    function emptyView() { return { paused: [], shots: {}, expanded: [], panels: emptyPanels() }; }
+    function emptyView() { return { paused: [], shots: {}, expanded: [], panels: emptyPanels(), render: {} }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
@@ -502,6 +506,13 @@
                 if (known(k) && typeof url === 'string' && url.startsWith('/api/shots/')) {
                     v.shots[k] = url;
                 }
+            }
+        }
+        // 图表渲染方式（per-chart）：只收活着的渲染器 id，注册表里没有的一律回退默认
+        if (raw.render && typeof raw.render === 'object') {
+            for (const [k, id] of Object.entries(raw.render)) {
+                const r = ChartRenderers.get(id);
+                if (known(k) && r && r.id === id) v.render[k] = id;
             }
         }
         return v;
@@ -1705,7 +1716,7 @@
         rstBtn.type = 'button'; rstBtn.className = 'pb'; rstBtn.textContent = '↺';
         rstBtn.title = '把调过的参数还原成文件里写的那些';
         rstBtn.addEventListener('click', (ev) => { ev.stopPropagation(); resetItemParams(t); });
-        prow.append(playBtn, rstBtn);
+        prow.append(ChartRenderers.makeModeButton(ch), playBtn, rstBtn);
         foot.append(pbar, prow);
         host.appendChild(foot);
         ch.pbar = pbar; ch.playBtn = playBtn;
@@ -1762,6 +1773,7 @@
         const ch = {
             file: t.file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
             cv, ctx: cv.getContext('2d'), pipeEl: pp, card, isView: true,
+            render: renderOf(t.file),
         };
         buildFileFoot(card, t, ch);
         card.appendChild(ds);
@@ -1906,6 +1918,7 @@
         const ch = {
             file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
             cv, ctx: cv.getContext('2d'), pipeEl: pp, card: host, isView: true,
+            render: renderOf(file),
         };
         host.append(nf, vh, vd, pp, cv);
         buildFileFoot(host, t, ch);       // 参数条 + 播放/还原：与列表卡片同一套
@@ -3193,56 +3206,31 @@
     labSync(true);
     applyView();          // 起手就按存档里的播放状态冻结（并把快照画回来）
 
-    function drawChart(ch) {
-        const c = ch.ctx, W = ch.w, H = ch.h;
-        c.clearRect(0, 0, W, H);
-        c.fillStyle = '#0a1022';
-        c.fillRect(0, 0, W, H);
-        const padL = 14, padR = 4, padT = 5, padB = 12;
-        const iw = W - padL - padR, ih = H - padT - padB;
-        c.font = '9px sans-serif';
-        c.textAlign = 'left';
-        for (let v = 0; v <= 1.001; v += 0.25) {
-            const y = Math.round(padT + ih * (1 - v)) + 0.5;
-            c.beginPath(); c.moveTo(padL, y); c.lineTo(W - padR, y);
-            c.strokeStyle = (v === 0 || v === 1) ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)';
-            c.lineWidth = 1; c.stroke();
-            if (v === 0 || v === 0.5 || v === 1) {
-                c.fillStyle = 'rgba(114,134,173,0.65)';
-                c.fillText(v.toFixed(1), 2, y + 3);
-            }
-        }
-        // X 轴分辨率自适应：可用宽 iw 决定能分辨几个时间片。
-        // 每个像素列装不下一个采样点时（窄画布），按列取 min/max 画竖向包络：
-        //   直接连线会因欠采样丢峰，丝带的上下缘（重缩放图永远贴边）会被抹平，包络则如实保留。
-        // 画得够宽时（每列 ≥1 个采样点）仍逐点连线，不做任何降采样。
-        const cols = Math.max(1, Math.round(iw));
-        const step = chartCount / cols;          // 每像素列平均装几个采样点
-        const decimated = step > 1.5;
-        const xOf = (p) => padL + iw * p / (CHART_N - 1);
-        const yOf = (v) => padT + ih * (1 - Math.max(0, Math.min(1, v)));
-        const rm = ringMap;                  // 窗口位置 p → 绝对环形下标（out 现在按绝对下标存）
-        for (let pc = 0; pc < SFM_PC; pc++) {
-            const base = pc * CHART_N, col = SEMI_RGB[pc];
-            c.beginPath();
-            if (decimated) {
-                for (let ci = 0; ci < cols; ci++) {
-                    const p0 = Math.floor(ci * step), p1 = Math.min(chartCount, Math.floor((ci + 1) * step));
-                    if (p1 <= p0) continue;
-                    let mn = Infinity, mx = -Infinity;
-                    for (let p = p0; p < p1; p++) { const v = ch.out[base + rm[p]]; if (v < mn) mn = v; if (v > mx) mx = v; }
-                    const x = padL + ci;           // 整数 x：列与像素对齐，逐帧不抖
-                    c.moveTo(x, yOf(mn));
-                    c.lineTo(x, yOf(mx));
-                }
-            } else {
-                for (let p = 0; p < chartCount; p++) c.lineTo(xOf(p), yOf(ch.out[base + rm[p]]));
-            }
-            c.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.85)`;
-            c.lineWidth = 1;
-            c.stroke();
-        }
+    // 渲染分派：模式挂在图表对象上（ch.render），渲染器在 content/Renderers/（策略模式）。
+    // view 打包渲染所需的全部状态 —— 渲染器不摸全局，这是组件化的边界。
+    function makeView(ch) {
+        return {
+            w: ch.w, h: ch.h, out: ch.out, ringMap, chartCount,
+            rows: SFM_PC, cols: CHART_N, colors: SEMI_RGB, notes: NOTE_NAMES,
+        };
     }
+    function drawChart(ch) {
+        ChartRenderers.get(ch.render).draw(ch.ctx, makeView(ch));
+    }
+    // 渲染方式持久化：per-chart 进存档（view.render[key]），与 paused / shots 同一套生命周期
+    function renderOf(key) {
+        const m = DOC.view && DOC.view.render;
+        const r = m && ChartRenderers.get(m[key]);
+        return (r && r.id === m[key]) ? m[key] : ChartRenderers.defaultId;
+    }
+    ChartRenderers.onChange = (ch, id) => {
+        const k = keyOf(ch);
+        if (!k) return;
+        const clean = !archiveDirty();
+        const v = viewOf(); v.render = v.render || {}; v.render[k] = id;
+        drawChart(ch);          // 立刻重绘：切换的反馈不用等下一帧
+        viewAutoSave(clean);
+    };
 
     // ---------- 主循环 ----------
     function loop(ts) {
