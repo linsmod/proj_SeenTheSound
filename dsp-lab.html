@@ -74,8 +74,8 @@
     .lab .lbody { flex: 1 1 auto; min-height: 0; overflow-y: auto;  display: flex; flex-direction: column; padding-top: 6px; }
     /* 面板之间的拖拽分割条（VSCode 那套）：拖左栏 / 右栏宽度，中间面板自动吃剩余；双击复位。
        命中区 10px（好抓），可见的只是中间 2px 那根线（常态是一条淡分隔线，hover / 拖动时亮成青色）。 */
-    .split { position: relative; flex: 0 0 10px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
-    .split::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; background: rgba(255,255,255,0.09); }
+    .split { position: relative; flex: 0 0 5px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
+    .split::after { content: ''; position: absolute; left: 0px; top: 0; bottom: 0; width: 2px;  background: rgba(255,255,255,0.09); }
     .split:hover::after, .split.drag::after { background: rgba(74,224,255,0.26); }   /* 只提示"这里能拖"，不刺眼 */
     /* 不再有 sticky / 换行 / narrow 那套：三栏常驻、等宽等高，滚动全在栏内（见 body / .wrap 的外壳规则）。 */
     .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
