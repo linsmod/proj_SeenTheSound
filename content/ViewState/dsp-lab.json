@@ -2,12 +2,6 @@
   "v": 1,
   "charts": [
     {
-      "id": "u1",
-      "title": "新图",
-      "desc": "",
-      "stages": []
-    },
-    {
       "id": "untitled",
       "title": "untitled",
       "desc": "",
@@ -151,12 +145,6 @@
       "stages": []
     },
     {
-      "id": "untitled-10",
-      "title": "输入源接入 副本",
-      "desc": "",
-      "stages": []
-    },
-    {
       "id": "InputSwitch",
       "title": "输入源接入 副本",
       "desc": "",
@@ -173,13 +161,32 @@
   ],
   "view": {
     "paused": [
-      "content/My dsps/untitled-3.json"
+      "content/My dsps/InputSwitch.json",
+      "content/My dsps/untitled-2.json",
+      "content/My dsps/untitled-3.json",
+      "content/My dsps/untitled-4.json",
+      "content/My dsps/untitled-6.json",
+      "content/My dsps/untitled-7.json",
+      "content/My dsps/untitled-8.json",
+      "content/My dsps/untitled-9.json",
+      "content/My dsps/untitled.json",
+      "content/My dsps/untitled-5.json",
+      "content/Snapshots/content_My_dsps_untitled-3.json.json"
     ],
     "shots": {
-      "content/My dsps/untitled-3.json": "/api/shots/content_My_dsps_untitled-3.json.png"
+      "content/My dsps/InputSwitch.json": "/api/shots/content_My_dsps_InputSwitch.json.png",
+      "content/My dsps/untitled-2.json": "/api/shots/content_My_dsps_untitled-2.json.png",
+      "content/My dsps/untitled-3.json": "/api/shots/content_My_dsps_untitled-3.json.png",
+      "content/My dsps/untitled-4.json": "/api/shots/content_My_dsps_untitled-4.json.png",
+      "content/My dsps/untitled-5.json": "/api/shots/content_My_dsps_untitled-5.json.png",
+      "content/My dsps/untitled-6.json": "/api/shots/content_My_dsps_untitled-6.json.png",
+      "content/My dsps/untitled-7.json": "/api/shots/content_My_dsps_untitled-7.json.png",
+      "content/My dsps/untitled-8.json": "/api/shots/content_My_dsps_untitled-8.json.png",
+      "content/My dsps/untitled-9.json": "/api/shots/content_My_dsps_untitled-9.json.png",
+      "content/My dsps/untitled.json": "/api/shots/content_My_dsps_untitled.json.png",
+      "content/Snapshots/content_My_dsps_untitled-3.json.json": "/api/shots/content_Snapshots_content_My_dsps_untitled-3.json.json.png"
     },
     "expanded": [
-      "content/Compares/",
       "content/Favorates/",
       "content/Recents/",
       "content/Functions/Log01.js",
@@ -192,25 +199,46 @@
       "content/UIControls/DropdownList.js",
       "content/UIControls/InputSourcePicker.js",
       "content/UIControls/NumberBox.js",
-      "content/My dsps/"
+      "content/Buffers/",
+      "content/Buffers/gate.grid.js",
+      "content/Buffers/sfm.matrix.js",
+      "content/Buffers/spec.fft.js",
+      "content/Buffers/wave.pcm.js",
+      "content/UIControls/"
     ],
     "panels": {
       "center": {
         "groups": [
           {
             "tabs": [
-              "content/My dsps/u1.json",
               "content/Templates/",
               "content/UIControls/DropdownList.js#DropdownList",
               "content/UIControls/InputSourcePicker.js#InputSourcePicker",
               "content/UIControls/NumberBox.js#NumberBox",
               "content/My dsps/",
               "content/My dsps/InputSwitch.json",
-              "content/My dsps/untitled-10.json",
               "content/ViewState/dsp-lab.json",
-              "content/My dsps/untitled-3.json"
+              "content/My dsps/untitled-3.json",
+              "content/My dsps/untitled-5.json",
+              "content/My dsps/untitled-8.json",
+              "content/Compares/",
+              "content/Compares/untitled.cmpv",
+              "content/Buffers/gate.grid.js#gate.grid",
+              "content/Buffers/sfm.matrix.js#sfm.matrix",
+              "content/Buffers/spec.fft.js#spec.fft",
+              "content/Buffers/wave.pcm.js#wave.pcm",
+              "content/Snapshots/content_My_dsps_untitled-3.json.json",
+              "content/Snapshots/content_My_dsps_untitled-2.json.json",
+              "content/Snapshots/content_My_dsps_untitled-4.json.json",
+              "content/Snapshots/content_My_dsps_untitled-5.json.json",
+              "content/Snapshots/content_My_dsps_untitled-6.json.json",
+              "content/Snapshots/content_My_dsps_untitled-7.json.json",
+              "content/Snapshots/content_My_dsps_untitled-8.json.json",
+              "content/Snapshots/content_My_dsps_untitled-9.json.json",
+              "content/Snapshots/content_My_dsps_untitled.json.json",
+              "content/Snapshots/content_Snapshots_content_My_dsps_untitled-3.json.json.json"
             ],
-            "active": "content/ViewState/dsp-lab.json",
+            "active": "content/UIControls/DropdownList.js#DropdownList",
             "size": 1
           }
         ],
@@ -227,7 +255,7 @@
       }
     },
     "render": {
-      "content/My dsps/InputSwitch.json": "line",
+      "content/My dsps/InputSwitch.json": "bars",
       "content/My dsps/untitled.json": "line",
       "content/Templates/inv+log+rescale.json": "line",
       "content/Templates/inv+pow+rescale.json": "line",

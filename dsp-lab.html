@@ -336,6 +336,12 @@
 <script src="/content/UIControls/NumberBox.js"></script>
 <script src="/content/UIControls/DropdownList.js"></script>
 <script src="/content/UIControls/InputSourcePicker.js"></script>
+<!-- 数据面缓冲：注册表 → 各缓冲模块（一个文件一个缓冲；页面的列节拍/随流分发见 connectSSE/updateBuffers） -->
+<script src="/content/Buffers/Buffers.js"></script>
+<script src="/content/Buffers/sfm.matrix.js"></script>
+<script src="/content/Buffers/spec.fft.js"></script>
+<script src="/content/Buffers/gate.grid.js"></script>
+<script src="/content/Buffers/wave.pcm.js"></script>
 <!-- 图表渲染器：走势 / 柱状…（一个渲染器一个文件，ChartRenderers 注册表） -->
 <script src="/content/Renderers/Renderers.js"></script>
 <script src="/content/Renderers/line.js"></script>
@@ -454,10 +460,11 @@
     const FILE_KEY_RE = /^content\/(?:[^/]+\/)*[^/]+\.(?:json|cmpv)$/;
     const DIR_KEY_RE = /^content\/(?:[^/]+\/)*$/;
     // 注册表源码文件（实体）与其下的虚拟叶子：key 形如 content/Functions/Lowpass.js#lowpass。
-    // 两个注册表同一套玩法：Functions（算子，OPS）/ UIControls（参数控件，WIDGETS）
+    // 三个注册表同一套玩法：Functions（算子，OPS）/ UIControls（参数控件，WIDGETS）/ Buffers（数据面）
     const FN_DIR = 'content/Functions/';
     const UIC_DIR = 'content/UIControls/';
-    const SRC_DIRS = [FN_DIR, UIC_DIR];
+    const BUF_DIR = 'content/Buffers/';
+    const SRC_DIRS = [FN_DIR, UIC_DIR, BUF_DIR];
     const isFnKey = (k) => typeof k === 'string' && SRC_DIRS.some((d) => k.startsWith(d)) && k.indexOf('#') > 0;
     const fnIdOf = (k) => k.slice(k.indexOf('#') + 1);
     function isFileKey(k) { return typeof k === 'string' && FILE_KEY_RE.test(k); }
@@ -491,8 +498,8 @@
                 && ((DIR_KEY_RE.test(d) && d !== 'content/')
                     || (SRC_DIRS.some((x) => d.startsWith(x)) && d.endsWith('.js'))));
         }
-        // 链输入源：只认注册表里有的（INPUT_SRC 在下方定义，调用发生在脚本求值后，没问题）
-        if (typeof raw.input === 'string' && INPUT_SRC[raw.input]) v.input = raw.input;
+        // 链输入源：只认注册表里有的（Buffers 注册表在页面脚本区已就绪）
+        if (typeof raw.input === 'string' && window.Buffers && Buffers.get(raw.input)) v.input = raw.input;
         // 各面板的标签：center 收 content/ 下的路径（文件或目录），right 只收这一份存档认得的条目 id。
         // 去重 + 截断都做一遍（存档是手写 / 老版本产的，形态不可信）；active 落空就退回第一个。
         const dedup = (list, ok) => {
@@ -666,7 +673,7 @@
     }
     // 从（已消毒的）视图存档恢复输入源选择；选择器 DOM 还没建好时只摆状态，initInputSel 会照它摆 UI
     function restoreInput() {
-        const want = (DOC.view && INPUT_SRC[DOC.view.input]) ? DOC.view.input : null;
+        const want = (DOC.view && window.Buffers && Buffers.get(DOC.view.input)) ? DOC.view.input : null;
         if (!want || want === inputSrc) return;
         const cur = document.querySelector(`#inputSel option[value="${want}"]`);
         if (cur && cur.disabled) return;      // 存的是 gate 但这次 --no-gate → 保持现状
@@ -965,39 +972,27 @@
             pcBins[((note % 12) + 12) % 12].push(i);
         }
     }
-    // 每采样逐音级 SFM 统计量（Σln m / Σm / n）环形缓冲；显示端按窗 K 滑窗合成 SFM
-    const sfmSl = new Float64Array(SFM_PC * CHART_N);
-    const sfmSa = new Float64Array(SFM_PC * CHART_N);
-    const sfmN  = new Float32Array(SFM_PC * CHART_N);
     const sfmLines = new Float32Array(SFM_PC * CHART_N);   // （保留名）当前输入源的窗口序重排，自检基准在用
-    const sfmDisp = new Float32Array(SFM_PC * CHART_N);    // 写入时冻结的显示 SFM（通道主序，下标 pc*CHART_N+idx）
-    // ---------- 链输入源（P2）：三个可选源，全部 12 音级 × CHART_N 同布局、同 0~1 值域 ----------
-    // 链和画布完全不感知换了源：runColumn / 自检只认 inputBuf()。写入点都在 updateBuffers 的列节拍里。
-    const specDisp = new Float32Array(SFM_PC * CHART_N);   // spec.fft：按音级折叠（pcBins 内 u8 均值 / 255）
-    const gateDisp = new Float32Array(SFM_PC * CHART_N);   // gate.grid：9 音区对同一音级取 max（/255）
-    let gateData = null, gateZones = 9, gateSeen = false;  // 流里出现过 gate 字段（--no-gate 时恒 null → 选项置灰）
-    let waveBuf = null, waveHz = 0, waveW = 0;             // wave.pcm：2 秒环形缓冲（仅存着，波形显示用，喂不进 vec12 链）
-    const INPUT_SRC = {
-        'sfm.matrix': { buf: sfmDisp, label: 'SFM 平坦度' },
-        'spec.fft': { buf: specDisp, label: '频谱电平（音级折叠）' },
-        'gate.grid': { buf: gateDisp, label: '门控增益（9 音区 max）' },
-    };
+    // ---------- 链输入源：数据面在 content/Buffers/（注册表见 Buffers.js），页面只认 id ----------
+    // 三个 vec12 源同布局同值域，链和画布完全不感知换了源；写入点在各缓冲模块的 writeColumn，
+    // 页面只负责列节拍（Buffers.writeColumn）与随流分发（Buffers.onMessage）。
+    const bufEnv = { freqData: null, pcBins: null, span: SFM_SPAN, winK: 10 };   // 列节拍的求值上下文（winK 随滑杆同步）
     let inputSrc = 'sfm.matrix';       // 由视图存档恢复（initInputSel）；chooseInput() 改
-    const inputBuf = () => (INPUT_SRC[inputSrc] || INPUT_SRC['sfm.matrix']).buf;
+    const inputBuf = () => (Buffers.get(inputSrc) || Buffers.get('sfm.matrix')).buf;
     // 每张图自己的源：链里**第一个启用**的 input 级声明 p.src（Input.js）；
     // 没写 input 级 / src 非法 → 回落全局默认（顶栏选择器）。取数仍归页面：runColumn 按它喂数。
     function chartSrcOf(stages) {
         for (const s of (stages || [])) {
             if (s.on === false || s.id !== 'input') continue;
             const v = s.p && s.p.src;
-            if (INPUT_SRC[v]) return v;
+            if (Buffers.get(v)) return v;
         }
         return inputSrc;
     }
-    const srcBufOf = (stages) => INPUT_SRC[chartSrcOf(stages)].buf;
+    const srcBufOf = (stages) => Buffers.get(chartSrcOf(stages)).buf;
     // 某个源的窗口序基准线（现算现用：12×250 一次循环，自检跑十几遍也无所谓）
     function linesOf(srcId) {
-        const src = (INPUT_SRC[srcId] || INPUT_SRC['sfm.matrix']).buf;
+        const src = (Buffers.get(srcId) || Buffers.get('sfm.matrix')).buf;
         const out = new Float32Array(SFM_PC * CHART_N);
         for (let pc = 0; pc < SFM_PC; pc++) {
             const base = pc * CHART_N;
@@ -1010,54 +1005,15 @@
     // 累计写入了多少列（单调递增）。判断"某块画布落后多少"只认它：
     // 用 (chartWrite - lastIdx + N) % N 会把"落后正好 250 帧"和"没有新数据"都算成 0。
     let chartSeq = 0;
-    // 写入时冻结合成：idx 采样的显示 SFM 按当时窗 K 算一次，此后永不变。
-    // 旧的显示端滑窗在左边界截断（最左 K−1 个点窗口不满、随点左移窗口继续变短 →
-    // 历史值被改写、左端图像变形），且老样本的历史槽位已被新数据覆盖、显示端无法补算，故移除。
-    function freezeSfmDisp(idx) {
-        const K = Math.max(1, Math.min(CHART_N, sfmWinK));
-        for (let pc = 0; pc < SFM_PC; pc++) {
-            let sl = 0, sa = 0, n = 0;
-            const base = pc * CHART_N;
-            for (let k = 0; k < K; k++) {
-                const o = base + ((idx - k + CHART_N) % CHART_N);
-                sl += sfmSl[o]; sa += sfmSa[o]; n += sfmN[o];
-            }
-            sfmDisp[base + idx] = n ? Math.exp(sl / n) / (sa / n) : 0;
-        }
-    }
     function updateBuffers(dt) {
         if (!freqData || !binFreqs) return;
         ensurePcBins();
+        bufEnv.freqData = freqData; bufEnv.pcBins = pcBins; bufEnv.winK = sfmWinK;
         chartAccum = Math.min(chartAccum + dt, 1 / CHART_HZ * 4);   // 防切页回来突发补写
         while (chartAccum >= 1 / CHART_HZ) {
             chartAccum -= 1 / CHART_HZ;
-            for (let pc = 0; pc < SFM_PC; pc++) {
-                let sl = 0, sa = 0, n = 0;
-                const bins = pcBins[pc];
-                for (let k = 0; k < bins.length; k++) {
-                    const ln = freqData[bins[k]] * (SFM_SPAN / 255) * (Math.LN10 / 20);
-                    sl += ln; sa += Math.exp(ln); n++;
-                }
-                const o = pc * CHART_N + chartWrite;
-                sfmSl[o] = sl; sfmSa[o] = sa; sfmN[o] = n;
-            }
-            // spec.fft 源：同一列节拍按音级折叠（u8 均值 / 255 → 0~1 电平），与 SFM 共享 pcBins 口径
-            for (let pc = 0; pc < SFM_PC; pc++) {
-                const bins = pcBins[pc];
-                let m = 0;
-                for (let k = 0; k < bins.length; k++) m += freqData[bins[k]];
-                specDisp[pc * CHART_N + chartWrite] = bins.length ? m / bins.length / 255 : 0;
-            }
-            // gate.grid 源：9 音区对同一音级取 max（任一音区被触发就算），--no-gate 时 gateData 为 null → 恒 0
-            for (let pc = 0; pc < SFM_PC; pc++) {
-                let g = 0;
-                for (let z = 0; z < gateZones; z++) {
-                    const v = gateData ? gateData[z * SFM_PC + pc] : 0;
-                    if (v > g) g = v;
-                }
-                gateDisp[pc * CHART_N + chartWrite] = g / 255;
-            }
-            freezeSfmDisp(chartWrite);   // 显示 SFM 写入时冻结（窗恒为满窗，历史值不随窗口滑动改变）
+            // 各源自己的折叠/合成都在各自模块里（sfm 的写入时冻结也在）；页面只管节拍与对齐
+            Buffers.writeColumn(chartWrite, bufEnv);
             chartWrite = (chartWrite + 1) % CHART_N;
             chartSeq++;
         }
@@ -1075,6 +1031,7 @@
         }
         syncRingMap();
     }
+    let gateOptOn = false;   // 顶栏选择器里 gate 项是否已放开（避免每条 SSE 消息都去查 DOM）
     function connectSSE() {
         const es = new EventSource('/stream');
         es.onopen = () => { isRunning = true; lastTs = 0; statusEl.textContent = '接收中'; };
@@ -1084,29 +1041,11 @@
             const bin = atob(msg.s);
             if (!freqData || freqData.length !== bin.length) freqData = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) freqData[i] = bin.charCodeAt(i);
-            // gate.grid 源：9 音区 × 12 音级 u8（行主序 z*12+pc）。--no-gate 时字段不存在 → gateData 恒 null。
-            // 首次见到就把输入选择器里置灰的那项放开（有真数据才有选它的意义）。
-            if (msg.gate) {
-                const gb = atob(msg.gate);
-                const zn = Math.floor(gb.length / SFM_PC);
-                if (zn > 0 && zn * SFM_PC === gb.length) {
-                    gateZones = zn;
-                    if (!gateData || gateData.length !== gb.length) gateData = new Uint8Array(gb.length);
-                    for (let i = 0; i < gb.length; i++) gateData[i] = gb.charCodeAt(i);
-                    if (!gateSeen) { gateSeen = true; enableGateOption(); }
-                }
-            }
-            // wave.pcm 源：峰保持抽取段（f32 LE）按 wHz 拼进 2 秒环形缓冲。单通道喂不进 vec12 链，
-            // 先只存着 —— 将来加波形显示视图时这里的数据已经是热的。
-            if (msg.w && msg.wHz) {
-                if (!waveBuf || waveHz !== msg.wHz) { waveHz = msg.wHz; waveBuf = new Float32Array(Math.round(waveHz * 2)); waveW = 0; }
-                const wb = atob(msg.w);
-                const u8 = new Uint8Array(wb.length);
-                for (let i = 0; i < wb.length; i++) u8[i] = wb.charCodeAt(i);
-                const dv = new DataView(u8.buffer);
-                const n = Math.floor(wb.length / 4);
-                for (let i = 0; i < n; i++) { waveBuf[waveW] = dv.getFloat32(i * 4, true); waveW = (waveW + 1) % waveBuf.length; }
-            }
+            // gate / wave 等随流字段：声明了 onStream 的缓冲各自消费（gate 解码+置可用，wave 拼环）
+            Buffers.onMessage(msg);
+            // gate 可用性翻转 → 输入选择器里置灰的那项放开（有真数据才有选它的意义）
+            const gb2 = Buffers.get('gate.grid');
+            if (gb2 && gb2.avail && gb2.avail() && !gateOptOn) { gateOptOn = true; enableGateOption(); }
             if (msg.freqs) {
                 if (!binFreqs || binFreqs.length !== msg.freqs.length) binFreqs = new Float64Array(msg.freqs.length);
                 for (let i = 0; i < msg.freqs.length; i++) binFreqs[i] = msg.freqs[i];
@@ -1244,7 +1183,7 @@
         }
         // base 必须用 nd.path（content/Functions/X.js）—— nd.name 只是文件名，
         // 拼出来的 '#'-key 过不了 isFnKey（要以 content/ 开头），会掉进 dspview 拿去当内容文件取。
-        // 一个 src 文件下挂两类虚拟叶子：算子（OPS.srcFile）与参数控件（WIDGETS.srcFile）
+        // 一个 src 文件下挂三类虚拟叶子：算子（OPS）/ 参数控件（WIDGETS）/ 数据面缓冲（Buffers）
         const srcChildren = (name, base) => {
             const out = [];
             for (const id of Object.keys(OPS)) {
@@ -1255,6 +1194,12 @@
             for (const nm of Object.keys(W)) {
                 if (W[nm].srcFile !== name) continue;
                 out.push({ kind: 'op', id: nm, path: base + '#' + nm, label: nm + '（控件）' });
+            }
+            if (window.Buffers) {
+                for (const b of Buffers.all()) {
+                    if (b.srcFile !== name) continue;
+                    out.push({ kind: 'op', id: b.id, path: base + '#' + b.id, label: b.label + '（缓冲）' });
+                }
             }
             return out.sort((a, b) => a.id.localeCompare(b.id));
         };
@@ -1683,6 +1628,28 @@
         },
     };
     function viewImplOf(name) { return VIEW_IMPL[name] || VIEW_IMPL.dsplistview; }
+    // 缓冲卡片：布局/值域/单位 + 角色 + 写入方式 —— 数据面资源的"出厂铭牌"
+    function renderBufView(host, b) {
+        const tags = document.createElement('div');
+        tags.className = 'vtools';
+        const chip = (t) => { const s = document.createElement('span'); s.className = 'st'; s.textContent = t; tags.appendChild(s); };
+        chip('数据面缓冲（Buffers）');
+        chip(b.role === 'input' ? 'role: 链输入' : 'role: 仅存储');
+        if (b.layout) chip(`布局: ${b.channels} × ${b.n}`);
+        chip(`dtype: ${b.dtype || 'f32'}`);
+        if (b.range) chip(`range: ${b.range.join(' ~ ')}`);
+        if (b.srcFile) chip('source: ' + BUF_DIR + b.srcFile);
+        tags.appendChild(document.createElement('br'));
+        chip(b.writeColumn ? '写入：列节拍（writeColumn，与其它源逐列对齐）' : '写入：随流（onStream，自管节拍/游标）');
+        if (b.avail) chip('可用性: avail() 动态（当前 ' + (b.avail() ? '可用' : '不可用') + '）');
+        host.appendChild(tags);
+        if (b.unit || b.note) {
+            const d = document.createElement('div');
+            d.className = 'tpl-empty';
+            d.textContent = [b.unit, b.note].filter(Boolean).join('。');
+            host.appendChild(d);
+        }
+    }
     // 参数控件卡片：契约（normalizeParam 的 spec + api 句柄）、来源、以及"谁在用我"反查
     function renderCtlView(host, id, ctl) {
         const tags = document.createElement('div');
@@ -1716,15 +1683,18 @@
     function renderFnView(p) {
         const id = fnIdOf(p.key);
         const op = OPS[id];
-        const ctl = !op && window.UIControls ? UIControls.WIDGETS[id] : null;
+        const buf = !op && window.Buffers ? Buffers.get(id) : null;
+        const ctl = !op && !buf && window.UIControls ? UIControls.WIDGETS[id] : null;
         const host = p.el;
         host.textContent = '';
         const head = document.createElement('div');
         head.className = 'st';
         head.textContent = op ? `${op.label || id} · ${id}`
-            : (ctl ? `${id} · 参数控件`
-                : `${id}（未注册：模块没载入或已改名）`);
+            : (buf ? `${buf.label} · ${id}`
+                : (ctl ? `${id} · 参数控件`
+                    : `${id}（未注册：模块没载入或已改名）`));
         host.appendChild(head);
+        if (buf) return renderBufView(host, buf);       // 数据面缓冲：Buffers 注册表的元数据
         if (ctl) return renderCtlView(host, id, ctl);   // 参数控件：UIControls 注册表的元数据
         if (!op) return;
         const tags = document.createElement('div');
@@ -1921,7 +1891,9 @@
         if (!FILES.length) return;
         // 目录标签也要看它还有没有 $treeNode.json：描述符被删掉 = 它退回纯文件夹，标签一并摘掉
         const keep = (k) => (k.endsWith('/') ? dirOpenable(k)
-            : (isFnKey(k) ? (!!OPS[fnIdOf(k)] || !!(window.UIControls && UIControls.WIDGETS[fnIdOf(k)])) : !!itemOf(k)));
+            : (isFnKey(k) ? (!!OPS[fnIdOf(k)]
+                || !!(window.UIControls && UIControls.WIDGETS[fnIdOf(k)])
+                || !!(window.Buffers && Buffers.get(fnIdOf(k)))) : !!itemOf(k)));
         let changed = false;
         for (const g of center.groups) {
             const left = g.tabs.filter(keep);
@@ -3557,7 +3529,7 @@
     // 换源 = 换 inputBuf() 指向：三个源同布局同值域，画布接着滚，链和自检全部无感。
     // 选择跟项目走（视图存档 v.input）—— 它决定"这些图画的是什么"，不是这台机器的偏好。
     function chooseInput(id) {
-        if (!INPUT_SRC[id] || id === inputSrc) return;
+        if (!Buffers.get(id) || id === inputSrc) return;
         const clean = !archiveDirty();
         inputSrc = id;
         viewOf().input = id;
@@ -3569,23 +3541,25 @@
         if (o) o.disabled = false;      // 流里见到 gate 字段（GATE_ENABLED）才有真数据
         try { labSync(false); } catch (e) {}   // 右栏开着的 InputSourcePicker 也重解析 options（gate 从置灰到放开）
     }
-    // InputSourcePicker 的选项 hook：页面把源清单（含可用性）声明给控件库 —— 控件不认识 /api/sources，只认这个
-    window.dspInputSources = () => Object.keys(INPUT_SRC).map((id) => ({
-        v: id, t: INPUT_SRC[id].label,
-        disabled: id === 'gate.grid' && !gateSeen,
+    // InputSourcePicker 的选项 hook：页面把源清单（含可用性）声明给控件库 —— 控件不认识 /api/sources，只认这个。
+    // 现在的真相源是 Buffers 注册表（inputs() 自带 role/inputShape 过滤），avail() 是各缓冲自己的可用性声明
+    window.dspInputSources = () => Buffers.inputs().map((b) => ({
+        v: b.id, t: b.label,
+        disabled: !!(b.avail && !b.avail()),
     }));
     async function initInputSel() {
         const sel = document.getElementById('inputSel');
         let meta = null;
         try { meta = await (await fetch('/api/sources', { cache: 'no-store' })).json(); } catch (e) { /* 清单拿不到就只剩占位，不挡主流程 */ }
         // 先恢复存档里的选择（保存的时候 gate 可能还开着，这次启动 --no-gate → 回落 SFM）
-        inputSrc = (DOC.view && INPUT_SRC[DOC.view.input]) ? DOC.view.input : 'sfm.matrix';
+        inputSrc = (DOC.view && Buffers.get(DOC.view.input)) ? DOC.view.input : 'sfm.matrix';
         for (const s of ((meta && meta.sources) || [])) {
-            if (s.shape !== 'vec12') continue;          // wave.pcm 是单通道波形，喂不进 12 通道的链
+            if (s.shape !== 'vec12' || !Buffers.get(s.id)) continue;   // wave.pcm 喂不进链；没注册的 id 不进选择器
             const o = document.createElement('option');
             o.value = s.id;
             o.textContent = s.label;
-            if (s.id === 'gate.grid' && !gateSeen) o.disabled = true;
+            const b = Buffers.get(s.id);
+            if (b.avail && !b.avail()) o.disabled = true;              // --no-gate 的 gate 置灰
             sel.appendChild(o);
         }
         const cur = sel.querySelector(`option[value="${inputSrc}"]`);
@@ -3731,7 +3705,7 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r9';
+    const ST_BUILD = 'r10';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);

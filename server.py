@@ -570,6 +570,7 @@ def dsp_lab():
 # send_from_directory 自带路径穿越防护（../ 一律 404）。
 FUNC_DIR = os.path.join(HERE, "content", "Functions")
 UIC_DIR = os.path.join(HERE, "content", "UIControls")
+BUF_DIR = os.path.join(HERE, "content", "Buffers")
 UIC_DIR = os.path.join(HERE, "content", "UIControls")
 
 
@@ -628,6 +629,16 @@ def rdr_module(name):
     if not name.lower().endswith(".js"):
         return jsonify({"ok": False, "error": "only .js is served here"}), 404
     resp = send_from_directory(RDR_DIR, name, mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+# 数据面缓冲（Buffers 注册表 + 各缓冲模块）：同上，一个文件一个模块
+@app.route("/content/Buffers/<path:name>")
+def buf_module(name):
+    if not name.lower().endswith(".js"):
+        return jsonify({"ok": False, "error": "only .js is served here"}), 404
+    resp = send_from_directory(BUF_DIR, name, mimetype="text/javascript")
     resp.headers["Cache-Control"] = "no-cache"
     return resp
 
@@ -904,11 +915,12 @@ def _content_tree(dirpath, prefix):
             dirs.append(nd)
         elif n.startswith("$"):
             continue                       # $ 开头 = 元数据（$schema / $treeNode），不是内容条目
-        elif n.endswith(".js") and dirpath in (FUNC_DIR, UIC_DIR):
-            # 算子 / 控件的源码都是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
+        elif n.endswith(".js") and dirpath in (FUNC_DIR, UIC_DIR, BUF_DIR):
+            # 算子 / 控件 / 缓冲的源码都是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
             # （前端 mergedTree 按注册表里的 srcFile 归属把模块当虚拟子节点）。
-            # _ 开头是自测件；Processor/Compile/UIControls 是各注册表的运行时核心，不进树。
-            core = ("Processor.js", "Compile.js") if dirpath == FUNC_DIR else ("UIControls.js",)
+            # _ 开头是自测件；各目录的运行时核心（Processor/Compile/UIControls/Buffers）不进树。
+            core = {"Processor.js", "Compile.js"} if dirpath == FUNC_DIR else \
+                {"UIControls.js"} if dirpath == UIC_DIR else {"Buffers.js"}
             if not n.startswith("_") and n not in core:
                 files.append({"kind": "src", "name": n, "path": prefix + n})
         elif n.endswith(ITEM_EXTS):
