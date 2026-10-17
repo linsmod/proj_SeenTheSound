@@ -173,9 +173,10 @@
               "content/Templates/inv+zscore.json",
               "content/My dsps/",
               "content/My dsps/untitled-4.json",
-              "content/My dsps/untitled-6.json"
+              "content/My dsps/untitled-6.json",
+              "content/Templates/inv.json"
             ],
-            "active": "content/My dsps/untitled.json",
+            "active": "content/Templates/inv.json",
             "size": 1
           }
         ],
@@ -190,7 +191,9 @@
       }
     },
     "render": {
-      "content/Templates/inv+log+rescale.json": "bars"
+      "content/My dsps/untitled.json": "line",
+      "content/Templates/inv+log+rescale.json": "bars",
+      "content/Templates/inv+pow+rescale.json": "line"
     }
   }
 }

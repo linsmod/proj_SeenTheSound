@@ -1733,7 +1733,9 @@
         const e = isDspFile(t.file) ? entryOf(stemOf(t.file)) : null;
         if (e) e.stages = sanitizeStages(t.stages) || [];
         delete t._stages;
-        renderCenter();
+        // 全部 pane 标脏：同一文件可能同时开在多张卡上（列表 + 大图、分屏两组），
+        // 只重挂活跃的那张会让其余卡继续攥着旧参数引用 —— centerInvalidate 就是干这个的。
+        centerInvalidate();
         if (e) { bindDraft(); labSync(true); refreshDirty(); }
     }
     // 视图重建出来的画布要接回存档里的暂停状态：置 paused（主循环跳过）+ 把快照画回位图
