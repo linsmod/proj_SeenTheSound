@@ -18,7 +18,7 @@ registerFunction({
 
   label: 'tanh',
   description: '以 0.5 为中心做 tanh 压缩：两端压缩、中间放大，k 越大越接近阶跃',
-  category: '归一化后',
+  category: '曲线',
   tags: 'tanh sigmoid s曲线 压缩',
 
   f: (x, p) => 0.5 + 0.5 * Math.tanh(p.k * (x - 0.5)) / Math.tanh(p.k / 2),

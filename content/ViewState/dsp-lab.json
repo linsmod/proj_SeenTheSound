@@ -56,42 +56,51 @@
           "p": {}
         }
       ]
+    },
+    {
+      "id": "untitled-4",
+      "title": "原始 SFM 数据",
+      "desc": "",
+      "stages": []
     }
   ],
   "view": {
-    "paused": [],
-    "shots": {},
+    "paused": [
+      "content/My dsps/untitled-3.json"
+    ],
+    "shots": {
+      "content/My dsps/untitled-3.json": "/api/shots/content_My_dsps_untitled-3.json.png"
+    },
     "expanded": [
       "content/Compares/",
       "content/Favorates/",
       "content/Recents/",
       "content/Snapshots/",
-      "content/Templates/",
-      "content/My dsps/"
+      "content/My dsps/",
+      "content/Templates/"
     ],
     "panels": {
       "center": {
         "groups": [
           {
             "tabs": [
-              "content/Templates/",
-              "content/My dsps/u1.json",
-              "content/My dsps/untitled.json",
               "content/Templates/input.json",
-              "content/Templates/inv+zscore.json",
-              "content/Templates/inv+rescale+tanh.json",
-              "content/Templates/inv+rescale+pow.json",
-              "content/Templates/inv+rescale+log01.json",
-              "content/Templates/inv+rescale.json",
-              "content/Templates/inv+rank.json",
-              "content/Templates/inv+log+rescale.json",
-              "content/Templates/inv+pow+rescale.json",
+              "content/My dsps/u1.json",
               "content/My dsps/untitled-2.json",
+              "content/Compares/",
+              "content/Templates/",
+              "content/Templates/inv+log+rescale.json",
+              "content/My dsps/untitled.json",
               "content/My dsps/untitled-3.json",
-              "content/My dsps/",
-              "content/Compares/"
+              "content/Templates/inv+pow+rescale.json",
+              "content/Templates/inv+rank.json",
+              "content/Templates/inv+rescale.json",
+              "content/Templates/inv+rescale+log01.json",
+              "content/Templates/inv+rescale+pow.json",
+              "content/Templates/inv+rescale+tanh.json",
+              "content/Templates/inv+zscore.json"
             ],
-            "active": "content/My dsps/",
+            "active": "content/Templates/inv+log+rescale.json",
             "size": 1
           }
         ],
@@ -99,10 +108,9 @@
       },
       "right": {
         "tabs": [
-          "u1",
-          "untitled"
+          "untitled-3"
         ],
-        "active": "untitled"
+        "active": "untitled-3"
       }
     }
   }

@@ -23,7 +23,7 @@ registerFunction({
 
   label: 'z-score',
   description: '按当前帧算 μ/σ，±zMax 夹紧后线性映射到 0~1；对整体音量涨落免疫',
-  category: '归一化内',
+  category: '归一化',
   tags: 'zscore 标准化 均值 方差 standard',
 
   f: (a, p) => {

@@ -21,7 +21,7 @@ registerFunction({
 
   label: '重缩放',
   description: '按当前帧 12 音级的 min/max 拉满到 0~1；极差≈0 时统一居中 0.5',
-  category: '归一化内',
+  category: '归一化',
   tags: '归一化 minmax rescale 重缩放',
 
   f: (a) => {

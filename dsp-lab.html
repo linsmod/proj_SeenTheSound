@@ -350,57 +350,33 @@
     const SEMI_RGB = Array.from({ length: SFM_PC }, (_, i) => oklchRgb(SEMI_L, SEMI_C, i * 30));
     // ---------- 管道计算（纯函数区，可独立数值测试） ----------
     // 管道：1-v（反相）→ 按序执行 ch.stages 的每一级 → OUTPUT
-    // 变换注册表 OPS，两种 kind：
-    //   scalar：逐音级独立映射 f(x,p)→x'（幂/log/tanh…）
-    //   vector：拿整条 12 音级向量 f(a,p)→a（就地改写）。min/max、μ/σ、排秩这类必须跨音级看全貌的
-    //           归一化只有靠跨音级上下文才能算，通用链装不下，所以显式区分而不是硬塞进 scalar。
-    // 每级自带 params spec（{key,label,type,min,max,step,def}），由 buildParams 统一渲染成控件。
+    // 变换注册表 OPS —— **由新运行时的 DSPFunctions 派生**（content/Functions/*.js 经 registerFunction 注册），
+    // 不再手写第二份。新增/修改算子只改 Functions 下的 .js，这里自动跟上（TopK 这类 plain 算子也因此可见可选）。
+    //   kind：scalar 逐音级映射 f(x,p)；vector 整条 12 音级 f(a,p) 就地改写；plain/sink 自管输入输出（没有纯函数 f）。
+    //   paramSchema 的字段名新旧两套都收（key/name、def/default），归一成老形状 {key,label,type,min,max,step,def}。
+    //   plain/sink 没有纯函数 f：编辑器可选可用（新运行时照跑），但旧整窗路径 computeChart 不支持（见其内守卫）。
     // 一级 = { id, on, p }：id 指向 OPS，on=false 跳过，p 存该级实参（默认值由 buildParams 填）。
-    const OPS = {
-        // 反相：原本写死在 computeChart 里的固定第一步，现在降级为普通可选算子（可删、可换序、可重复）。
-        inv:  { label: '1-v 反相', kind: 'scalar', f: (x) => 1 - x, params: [] },
-        id:    { label: '恒等', kind: 'scalar', f: (x) => x, params: [] },
-        pow:   { label: '幂', kind: 'scalar', f: (x, p) => Math.pow(Math.max(0, x), p.n),
-                 params: [{ key: 'n', label: 'n', type: 'range', min: 0.1, max: 4, step: 0.1, def: 2 }] },
-        log:   { label: 'log', kind: 'scalar', f: (x) => Math.log(Math.max(0, x) + 1e-3), params: [] },
-        tanh:  { label: 'tanh', kind: 'scalar', f: (x, p) => 0.5 + 0.5 * Math.tanh(p.k * (x - 0.5)) / Math.tanh(p.k / 2),
-                 params: [{ key: 'k', label: 'k', type: 'range', min: 1, max: 20, step: 0.5, def: 6 }] },
-        // log01：0~1 上做 log 后线性重映射回 0~1（0→0、1→1）
-        log01: { label: 'log(0~1)', kind: 'scalar', f: (x) => { const e = 1e-3; return (Math.log(e + (1 - e) * x) - Math.log(e)) / -Math.log(e); }, params: [] },
-        rescale: { label: '重缩放', kind: 'vector', f: (a) => {
-            let mn = Infinity, mx = -Infinity;
-            for (let i = 0; i < SFM_PC; i++) { const v = a[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
-            const rg = mx - mn;
-            for (let i = 0; i < SFM_PC; i++) a[i] = rg > 1e-9 ? (a[i] - mn) / rg : 0.5;   // 极差≈0 → 居中
-        }, params: [] },
-        zscore: { label: 'z-score', kind: 'vector', f: (a, p) => {
-            let sum = 0;
-            for (let i = 0; i < SFM_PC; i++) sum += a[i];
-            const mean = sum / SFM_PC;
-            let q = 0;
-            for (let i = 0; i < SFM_PC; i++) { const d = a[i] - mean; q += d * d; }
-            const sd = Math.sqrt(q / SFM_PC), zm = p.zMax || 2;
-            for (let i = 0; i < SFM_PC; i++) {          // 均值/σ 先算完再写，避免边写边读
-                const z = sd > 1e-9 ? (a[i] - mean) / sd : 0;
-                a[i] = (Math.max(-zm, Math.min(zm, z)) + zm) / (2 * zm);
-            }
-        }, params: [{ key: 'zMax', label: '±z', type: 'range', min: 1, max: 4, step: 0.1, def: 2 }] },
-        rank: { label: '分位秩', kind: 'vector', f: (a) => {
-            let mn = Infinity, mx = -Infinity;
-            for (let i = 0; i < SFM_PC; i++) { const v = a[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
-            if (mx - mn <= 1e-9) { for (let i = 0; i < SFM_PC; i++) a[i] = 0.5; return; }
-            for (let i = 0; i < SFM_PC; i++) rankTmp[i] = a[i];   // 排秩要读原值：先快照再写回
-            for (let i = 0; i < SFM_PC; i++) {
-                const x = rankTmp[i];
-                let less = 0, equal = 0;
-                for (let q = 0; q < SFM_PC; q++) {
-                    if (rankTmp[q] < x - 1e-12) less++;
-                    else if (rankTmp[q] <= x + 1e-12) equal++;
-                }
-                a[i] = (less + (equal - 1) / 2) / (SFM_PC - 1);   // 并列取平均秩
-            }
-        }, params: [] },
-    };
+    const OPS = {};
+    for (const mod of DSPFunctions) {
+        if (!mod || !mod.id) continue;
+        OPS[mod.id] = {
+            label: mod.label || mod.id,
+            kind: mod.kind === 'vector' ? 'vector' : (mod.kind === 'scalar' ? 'scalar' : (mod.kind || 'plain')),
+            plain: mod.kind === 'plain' || mod.kind === 'sink',
+            f: (typeof mod.f === 'function') ? mod.f : null,
+            params: (mod.paramSchema || []).map((s) => ({
+                key: s.key || s.name,
+                label: s.label || s.key || s.name || '?',
+                type: s.type || 'range',
+                min: (s.min != null) ? s.min : null,
+                max: (s.max != null) ? s.max : null,
+                step: (s.step != null) ? s.step : 0.1,
+                def: (s.def != null) ? s.def : (s.default != null) ? s.default : 0,
+            })),
+            category: mod.category || '其他',
+            description: mod.description || '',
+        };
+    }
 
     // ---------- 文档模型：一份可序列化 JSON = 视图状态 + 「我的图」的内存镜像 ----------
     // { v, charts: [ {id, title, desc, stages:[{id,on,p,collapsed}]}], view }
@@ -670,7 +646,6 @@
 
     const chartCount = CHART_N;   // 固定满窗（滚动示波器式，与主面板一致）
     const pipeTmp = new Float64Array(SFM_PC);   // 单点 12 音级工作区（computeChart 同步调用，不可跨图复用）
-    const rankTmp = new Float64Array(SFM_PC);   // rank 就地改写前先快照原值
 
     // 旧的整窗批算：sfmLines（12×CHART_N，窗口序）→ ch.out（同布局，0~1 归一值）
     // 现役渲染已经不用它了（见下面的 stepChart）；它保留下来当 dspSelfTest 的**基准实现**，
@@ -685,6 +660,7 @@
                 const st = stages[s];
                 if (!st.on) continue;
                 const op = OPS[st.id];
+                if (!op || !op.f) throw new Error(`算子 ${st.id} 没有 f()（plain/sink），旧整窗路径不支持`);
                 if (op.kind === 'scalar') for (let pc = 0; pc < SFM_PC; pc++) pipeTmp[pc] = op.f(pipeTmp[pc], st.p);
                 else op.f(pipeTmp, st.p);
             }
@@ -868,7 +844,7 @@
             const op = OPS[st.id];
             const fp = Object.entries(st.p).map(([k, v]) => `${k}=${(+v).toFixed(1)}`).join(',');
             const txt = fp ? `${op.label}(${fp})` : op.label;
-            const wrapped = op.kind === 'vector' ? `{${txt}}` : `[${txt}]`;
+            const wrapped = op.kind === 'vector' ? `{${txt}}` : (op.plain ? `⟨${txt}⟩` : `[${txt}]`);
             parts.push(st.on ? wrapped : `~~${txt}~~`);
         }
         return parts.join(' → ') + ' → OUTPUT';
@@ -1887,8 +1863,10 @@
             chip.className = 'st' + (s.on ? '' : ' off');
             const op = OPS[s.id];
             const fp = Object.entries(s.p).map(([k, v]) => `${k}=${(+v).toFixed(1)}`).join(',');
-            chip.textContent = `${ordLabel(i + 1)} ${op.label}${fp ? '(' + fp + ')' : ''}${op.kind === 'vector' ? ' ⧉' : ''}`;
-            chip.title = (op.kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射') + (s.on ? '' : ' · 这一级已停用');
+            chip.textContent = `${ordLabel(i + 1)} ${op.label}${fp ? '(' + fp + ')' : ''}`
+                + `${op.kind === 'vector' ? ' ⧉' : (op.plain ? ' ◇' : '')}`;
+            chip.title = (op.plain ? '自管输入输出（plain/sink）' : (op.kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射'))
+                + (s.on ? '' : ' · 这一级已停用');
             stbox.appendChild(chip);
         });
         const tools = document.createElement('div'); tools.className = 'vtools';
@@ -3039,12 +3017,27 @@
 
             const sel = document.createElement('select');
             sel.className = 'sel';
-            sel.title = OPS[st.id].kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射';
+            sel.title = OPS[st.id].plain ? '自管输入输出（plain/sink，老路径不可比）'
+                : (OPS[st.id].kind === 'vector' ? '整条 12 音级一起算（跨音级上下文）' : '逐音级独立映射');
+            // 按 category 分组（算子模块自带的元数据）；◇ = plain/sink，⧉ = vector
+            const cats = new Map();
             for (const key of Object.keys(OPS)) {
-                const o = document.createElement('option');
-                o.value = key;
-                o.textContent = (OPS[key].kind === 'vector' ? '⧉ ' : '') + OPS[key].label;
-                sel.appendChild(o);
+                const op = OPS[key];
+                const c = op.category || '其他';
+                if (!cats.has(c)) cats.set(c, []);
+                cats.get(c).push([key, op]);
+            }
+            for (const [cat, arr] of cats) {
+                const g = document.createElement('optgroup');
+                g.label = cat;
+                for (const [key, op] of arr) {
+                    const o = document.createElement('option');
+                    o.value = key;
+                    o.textContent = (op.plain ? '◇ ' : (op.kind === 'vector' ? '⧉ ' : '')) + op.label;
+                    o.title = op.description || '';
+                    g.appendChild(o);
+                }
+                sel.appendChild(g);
             }
             sel.value = st.id;
             sel.addEventListener('change', () => {
@@ -3300,8 +3293,10 @@
     // 控制台敲 dspSelfTest() 随时重跑；页面加载后约 6 秒自动跑一次（那时已收满一整窗）。
     function selfTestChart(ch) {
         const stages = (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} }));
+        // plain/sink（如 topk）没有纯函数 f，旧整窗路径算不了 → 这条链只能靠新运行时自己，跳过比对
+        if (!stages.every((s) => OPS[s.id] && OPS[s.id].f)) return { err: '含 plain/sink 算子：旧路径不可比，跳过' };
         const oldOut = new Float32Array(SFM_PC * CHART_N);
-        computeChart({ out: oldOut, stages }, sfmLines);   // 旧路径（复用 pipeTmp/rankTmp；同步执行，打完即回）
+        computeChart({ out: oldOut, stages }, sfmLines);   // 旧路径（复用 pipeTmp；同步执行，打完即回）
 
         let proc;
         try { proc = compileChart({ stages }, 'selftest/' + (ch.id || 'x')); }
@@ -3392,6 +3387,7 @@
                 stepChart(ch);   // 先同步追平：别把"刚切过来、还没跑一帧"当成不一致
                 if (!ch.proc) continue;
                 const stages = (ch.stages || []).map((s) => ({ id: s.id, on: s.on !== false, p: s.p || {} }));
+                if (!stages.every((s) => OPS[s.id] && OPS[s.id].f)) continue;   // plain/sink：旧路径不可比，跳过
                 const ref = new Float32Array(SFM_PC * CHART_N);
                 computeChart({ out: ref, stages }, sfmLines);
 

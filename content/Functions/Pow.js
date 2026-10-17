@@ -19,7 +19,7 @@ registerFunction({
 
   label: '幂',
   description: 'x^n。n>1 放大高值、压低压值；n<1 拉伸低值',
-  category: '归一化前',
+  category: '曲线',
   tags: '幂 平方 幂次 power',
 
   f: (x, p) => Math.pow(Math.max(0, x), p.n),

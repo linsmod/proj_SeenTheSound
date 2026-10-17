@@ -16,7 +16,7 @@ registerFunction({
 
   label: '恒等',
   description: '原样透传，用来占位或做对照',
-  category: '通用',
+  category: '线性',
   tags: '恒等 透传 identity id',
 
   f: (x) => x,

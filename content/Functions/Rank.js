@@ -30,7 +30,7 @@ registerFunction({
 
   label: '分位秩',
   description: '按当前帧把 12 个值换成 0~1 的平均秩（并列取平均），只保留排序、丢掉幅度',
-  category: '归一化内',
+  category: '归一化',
   tags: 'rank 分位 秩 percentile 排序',
 
   // vector：a 已是副本，可就地改写；返回值留空表示"用 a"

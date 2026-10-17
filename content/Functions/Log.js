@@ -17,7 +17,7 @@ registerFunction({
 
   label: 'log',
   description: 'log(max(0,x)+1e-3)，强力拉伸低值。输出可为负，需后接 rescale 或由末端夹紧',
-  category: '归一化前',
+  category: '曲线',
   tags: 'log 对数 ln',
 
   f: (x) => Math.log(Math.max(0, x) + 1e-3),

@@ -44,7 +44,7 @@ registerFunction({
 
   label: '1-v 反相',
   description: '把取值反过来：0→1、1→0。谐波分布里等价于"看缺失"，常放链首把"亮"变成"暗"',
-  category: '归一化前',
+  category: '线性',
   tags: '反相 反转 invert 1-x',
 
   // scalar：循环由编译器代劳，这里只描述"一个值怎么变"

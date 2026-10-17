@@ -49,7 +49,6 @@ TopK.io = { in: 'num[]', out: 'num[]' };
 TopK.description = '返回数组中最大的 k 个元素；可选把剩余元素 / 前 k 个写到端口';
 TopK.category = '选择';
 TopK.tags = '选择 最大 前k topk topn top';
-
 TopK.paramSchema = [
     {
         name: 'K',
@@ -57,8 +56,18 @@ TopK.paramSchema = [
         type: 'number',
         default: 10,
         control: {
-            shift_adjust_factor: 'inherit',
-            ctrl_adjust_factor: 'inherit',
+            type: 'NumberBox',
+            fractionDigits: 0, // can be fn
+            step: 1, // can be fn
+            min: 1, // can be fn
+            max:(fs)=>fs.INPUT.length, // can be fn
+            shift_step_factor: 'inherit', // shift+mouse wheel, preset is 10x
+            ctrl_step_factor: 'inherit', // preset is 0.1x
+            mid_click_to_reset: 'inherit', // Reset to defaults when mid-click, preset is true
+            arrow_up_behavior:'inherit', // preset is 'step up',
+            arrow_down_behavior:'inherit', // preset is 'step down',
+            arrow_left_behavior:'inherit', // preset is 'step down',
+            arrow_right_behavior:'inherit', // preset is 'step up',
         },
     },
 ];

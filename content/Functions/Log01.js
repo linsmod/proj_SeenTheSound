@@ -19,7 +19,7 @@ registerFunction({
 
   label: 'log(0~1)',
   description: '在 0~1 上做 log 后线性重映射回 0~1（0→0、1→1），拉伸低值且不越界',
-  category: '归一化后',
+  category: '曲线',
   tags: 'log 0~1 归一化后',
 
   f: (x) => { const e = 1e-3; return (Math.log(e + (1 - e) * x) - Math.log(e)) / -Math.log(e); },
