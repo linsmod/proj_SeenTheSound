@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/pipeline.schema.json",
+  "title": "处理管线配置",
+  "description": "一条有序的处理管线：stages 按数组顺序依次执行。每个 stage 由 id 标识处理函数、on 控制开关、p 携带参数；p 的字段由对应处理函数自行约定，本 schema 不约束。",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "管线名称"
+    },
+    "desc": {
+      "type": "string",
+      "description": "管线说明"
+    },
+    "stages": {
+      "type": "array",
+      "description": "按顺序执行的 stage 列表",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/stage" }
+    }
+  },
+  "required": ["title", "stages"],
+  "additionalProperties": false,
+
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "处理函数标识；具体有哪些 id 由运行时注册表决定，不在本 schema 内枚举"
+        },
+        "on": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用；false 时跳过该 stage"
+        },
+        "p": {
+          "type": "object",
+          "description": "处理函数参数；字段与取值由该 id 对应的处理函数自行约定，schema 不校验其内容",
+          "default": {}
+        }
+      },
+      "required": ["id", "on", "p"],
+      "additionalProperties": false
+    }
+  }
+}

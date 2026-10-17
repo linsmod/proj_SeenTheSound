@@ -6,16 +6,17 @@
       "title": "新图",
       "desc": "",
       "stages": []
+    },
+    {
+      "id": "untitled",
+      "title": "untitled",
+      "desc": "",
+      "stages": []
     }
   ],
   "view": {
-    "paused": [
-      "content/Templates/input.json"
-    ],
-    "shots": {
-      "content/Templates/input.json": "/api/shots/content_Templates_input.json.png"
-    },
-    "openedTabs": [],
+    "paused": [],
+    "shots": {},
     "expanded": [
       "content/Compares/",
       "content/Favorates/",
@@ -24,6 +25,29 @@
       "content/ViewState/",
       "content/Templates/",
       "content/My dsps/"
-    ]
+    ],
+    "panels": {
+      "center": {
+        "tabs": [
+          "content/Templates/",
+          "content/My dsps/u1.json",
+          "content/My dsps/untitled.json",
+          "content/Templates/$schema.json",
+          "content/Templates/input.json",
+          "content/Templates/inv+zscore.json",
+          "content/Templates/inv+rescale+tanh.json",
+          "content/Templates/inv+rescale+pow.json",
+          "content/Templates/inv+rescale+log01.json",
+          "content/Templates/inv+rescale.json",
+          "content/Templates/inv+rank.json",
+          "content/Templates/inv+log+rescale.json"
+        ],
+        "active": "content/Templates/$schema.json"
+      },
+      "right": {
+        "tabs": [],
+        "active": ""
+      }
+    }
   }
 }

@@ -28,7 +28,7 @@
        窄屏（手机等）放不下三栏时靠 flex-wrap 依次换行，不维护断点。 */
     .wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; padding: 10px 12px 16px; }
     /* 左栏文件树：宽度固定，长了自己滚（它是导航，不该跟着中间面板一起长） */
-    .tree { flex: 0 0 216px; box-sizing: border-box; padding: 4px 4px 6px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; }
+    .tree { flex: 0 0 var(--w-tree, 216px); box-sizing: border-box; padding: 4px 4px 6px; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; }
     /* 树 = 磁盘 content/ 的目录结构：每个目录一个 .grp（目录行 + .kids 内容容器），逐层嵌套缩进 */
     .tree > div + div { margin-top: 2px; }
     /* 目录行可展开/收起（VSCode 那套）：三角单独可点，收起时 .kids 整块隐藏（后代目录与文件一起收） */
@@ -50,14 +50,19 @@
     .tree .tnode.tpl .tn { color: #9fb0d6; }
     .tree .tnode.tpl .to { color: #6d7fa6; }
     /* 中间：可换视图的面板（dsplistview / dspview），宽度自适应 */
-    .mid { flex: 1 1 420px; min-width: 0; }
+    .mid { flex: 1 1 420px; min-width: 0; position: relative; }   /* relative：给标签条的自绘滚动条当定位基准 */
     /* 右栏编辑器（dspEditorView）外壳：背景/圆角/描边/纵向流。
        .etop/.erow/.dsc 是编辑头（改标题说明），画布是"当前链的最终结果"，再往下是工具条与逐级卡。 */
-    .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; flex: 0 1 372px; min-width: 0; max-width: 372px; align-self: flex-start; }
-    /* 吸附 + 栏内滚动只在三栏并排时启用：阈值 ≈ 216 + 420 + 372 + 两个 gap + padding = 1064 */
-    @media (min-width: 1064px) {
-        .lab, .tree { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
-    }
+    .lab { box-sizing: border-box; background: #0e1630; border-radius: 8px; border: 1px solid rgba(255,255,255,0.22); display: flex; flex-direction: column; padding: 6px 8px 8px; flex: 0 1 var(--w-lab, 372px); max-width: var(--w-lab, 372px); min-width: 0; align-self: flex-start; position: relative; }
+    /* 面板之间的拖拽分割条（VSCode 那套）：拖左栏 / 右栏宽度，中间面板自动吃剩余；双击复位。
+       命中区 10px（好抓），可见的只是中间 2px 那根线（平时透明，hover / 拖动时亮起）。 */
+    .split { position: relative; flex: 0 0 10px; align-self: stretch; cursor: col-resize; user-select: none; touch-action: none; }
+    .split::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 1px; }
+    .split:hover::after, .split.drag::after { background: rgba(74,224,255,0.45); }
+    .wrap.narrow .split { display: none; }        /* 换行了就没有可拖的边界 */
+    /* 吸附 + 栏内滚动只在三栏并排时启用：能否并排由 applySplits() 按实际宽度算（宽度可调后固定媒体查询不再准） */
+    .wrap:not(.narrow) .tree, .wrap:not(.narrow) .lab { position: sticky; top: 10px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
+    .wrap:not(.narrow) .split { position: sticky; top: 10px; align-self: flex-start; height: calc(100vh - 24px); }
     .lab .pipe { flex: none; margin: 2px 0 4px; font-size: 11px; color: #8fa2c8; font-family: Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     canvas.mx { flex: none; display: block; width: 100%; height: 132px; background: #0a1022; border-radius: 6px; }
     /* 顶栏的全局播放控制：与全局参数条同族，放在它们右边 */
@@ -98,6 +103,64 @@
     .lab .dirty { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ffb347; }
     .lab .xbtn { flex: none; width: 20px; height: 18px; padding: 0; background: none; border: 1px solid transparent; border-radius: 4px; color: #8fa2c8; font-size: 12px; line-height: 1; cursor: pointer; }
     .lab .xbtn:hover { background: #263a60; color: #fff; border-color: rgba(255,255,255,0.15); }
+    /* 通用标签条（VSCode 那套，右栏编辑器与中间内容面板共用）：
+       整条是一条"头"——细底线 + 一排站在线上的页签；活跃页签用顶部亮线 + 淡底标出，与下方内容连成一体。
+       一个条目 = 一个打开着的目标，点击切换、✕ / 中键关闭；栏宽不够就横向自己滚。 */
+    .panetabs {
+        flex: none; display: flex; align-items: stretch; gap: 2px;
+        margin-bottom: 6px;
+        border-bottom: 1px solid rgba(255,255,255,0.10);
+        overflow-x: auto; overflow-y: hidden;
+        /* 30px 的头里塞一条横向滚动条会把"页签 → 底线"的关系撑断（滚动条夹在中间），所以隐藏原生条，
+           滚动交给滚轮（见 makeTabStrip 里的 wheel 处理） */
+        scrollbar-width: none;
+        overscroll-behavior-x: contain;     /* 横向滚到头别触发浏览器的"后退"手势 */
+    }
+    .panetabs::-webkit-scrollbar { height: 0; }
+    .panetabs[hidden] { display: none; }
+    /* 右栏是带内边距的卡片：让标签条贴到卡片两边，看起来像真标题栏 */
+    .lab > .panetabs { margin: -6px -8px 6px; padding: 5px 4px 0; }
+    .panetab {
+        flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
+        max-width: 190px; box-sizing: border-box; padding: 5px 6px 5px 9px;
+        background: transparent; border: 1px solid transparent; border-bottom: 0;
+        border-radius: 6px 6px 0 0;
+        color: #7d8db3; font-size: 12px; line-height: 1.35; white-space: nowrap;
+        cursor: pointer; transition: background 0.12s, color 0.12s;
+    }
+    .panetab:hover { background: rgba(255,255,255,0.045); color: #bcc8e8; }
+    .panetab.on {
+        background: rgba(74,224,255,0.10);
+        border-color: rgba(74,224,255,0.28);
+        box-shadow: inset 0 2px 0 #4ae0ff;
+        color: #e8eefc;
+    }
+    .panetab .ti { flex: none; font-size: 10px; line-height: 1; opacity: 0.9; }        /* 类型图标（目录 / 文件 / 对比） */
+    .panetab .tt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .panetab .td { flex: none; width: 5px; height: 5px; border-radius: 50%; background: #ffb347; }   /* 有未保存改动 */
+    .panetab .tx {
+        flex: none; width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 3px; color: #5a6c94; font-size: 10px; line-height: 1; opacity: 0.35;
+        transition: opacity 0.12s, background 0.12s;
+    }
+    .panetab:hover .tx, .panetab.on .tx { opacity: 1; }                               /* 悬停 / 活跃才把 ✕ 亮出来 */
+    .panetab .tx:hover { background: rgba(255,255,255,0.16); color: #fff; }
+    /* 标签条的单行横向滚动条：3px 细条，正好压在标签条那条分隔线上。
+       原生横向滚动条夹在"页签"与"分隔线"之间，会把两者撑开、破坏站线的观感，所以自己画一条：
+       它是 .panetabs 的兄弟（绝对定位），不随内容滚动，长度按 scrollLeft / scrollWidth 实时算。 */
+    .panebar {
+        position: absolute; height: 3px; border-radius: 2px; z-index: 3;
+        background: rgba(74,224,255,0.35); opacity: 0.55; cursor: grab;
+        transition: opacity 0.15s, background 0.15s;
+    }
+    .panebar[hidden] { display: none; }
+    /* 看得见的只有 3px，但可抓的高度放大到 ~11px（上下各外扩 4px），否则鼠标根本点不中 */
+    .panebar::before { content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px; }
+    .panetabs:hover ~ .panebar, .panebar.hot { opacity: 1; background: rgba(74,224,255,0.78); }
+    .panebar.hot { cursor: grabbing; }
+    /* 内容面板：一块 host 装 N 个 pane（每条标签一个），非活跃的整块 hidden —— 内容与滚动位置一并留着 */
+    .panehost { min-width: 0; }
+    .tabpane[hidden] { display: none; }
     /* 空态：没有打开任何编辑目标时只留提示块（含「自由探索」入口），其余控件全部收起 */
     .lab .idle { display: none; padding: 22px 12px; font-size: 12px; line-height: 1.8; color: #5a6c94; text-align: center; }
     .lab.idle .idle { display: block; }
@@ -124,7 +187,7 @@
     .cmenu button { display: block; width: 100%; padding: 4px 8px; background: none; border: 0; border-radius: 4px; color: #bcc8e8; font-size: 12px; text-align: left; cursor: pointer; }
     .cmenu button:hover { background: #263a60; color: #fff; }
     .cmenu button.danger:hover { background: #6b2440; }
-    /* 中心面板的视图切换：面包屑 + 两块互斥视图（dsplistview / dspview），由 open() 决定装哪块 */
+    /* 中心面板：标签条 + 面包屑 + 各标签一块 pane（.dsplist 目录列表 / .dspview 单文件链路），装什么由 open() 决定 */
     .crumb { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-bottom: 8px; font-size: 12px; color: #8fa2c8; }
     .crumb .seg { padding: 1px 7px; background: #141d34; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; color: #8fa2c8; cursor: pointer; }
     .crumb .seg:hover { background: #263a60; color: #fff; }
@@ -148,8 +211,8 @@
     .dsplist .tcard { box-sizing: border-box; display: flex; flex-direction: column; background: #0e1630; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 6px 8px 8px; cursor: pointer; }
     .dsplist .tcard:hover { border-color: rgba(74,224,255,0.45); }
     .dsplist .tcard.sel { border-color: #4ae0ff; box-shadow: 0 0 0 1px rgba(74,224,255,0.45); }
-    /* 两块视图互斥：[hidden] 只靠 UA 样式挡不住 .dsplist 自己的 display，这里显式压掉 */
-    .dsplist[hidden], .dspview[hidden] { display: none; }
+    /* 标签全是 .tabpane：.dsplist 是 grid、.dspview 是块，两者互斥靠 [hidden]，这里显式压掉自己的 display */
+    .dsplist[hidden], .dspview[hidden], .tabpane[hidden] { display: none; }
     /* 树里的模板目录：目录行平齐、文件行缩进一档，看得出是同一目录下的条目 */
     .tree .tnode.dir { font-weight: 700; }
     .tree .tnode.file { margin-left: 14px; }
@@ -181,15 +244,18 @@
 <div class="legend-row" id="legend"></div>
 <div class="wrap">
     <aside class="tree" id="tree"></aside>
+    <div class="split" data-fixed="tree" title="拖动调整左栏宽度（双击复位）"></div>
     <div class="mid">
+        <div class="panetabs" id="midTabs" hidden></div>
         <div class="crumb" id="crumb"></div>
-        <div class="dsplist" id="dsplist" hidden></div>
-        <div class="dspview" id="dspview" hidden></div>
+        <div class="panehost" id="midHost"></div>
     </div>
+    <div class="split" data-fixed="lab" title="拖动调整右栏宽度（双击复位）"></div>
     <div class="lab" id="lab">
+        <div class="panetabs" id="labTabs" hidden></div>
         <div class="etop">
             <span class="dirty" id="labDirty"></span>
-            <button class="xbtn" id="labClose" type="button" title="关闭当前编辑（未保存会先问，走 VSCode 关闭标签那套：保存 / 丢弃 / 取消）">✕</button>
+            <button class="xbtn" id="labClose" type="button" title="关闭当前标签（未保存会先问，走 VSCode 关标签那套：保存 / 丢弃 / 取消）">✕</button>
         </div>
         <div class="idle">
             左栏点文件行、或双击中间卡片 → 在这里编辑那一条<br/>
@@ -365,8 +431,11 @@
     }
     function isDspFile(file) { return dirOf(file) === DIR_DSP; }
     function isCmpvFile(file) { return typeof file === 'string' && file.endsWith('.cmpv'); }   // 对比视图
-    // expanded：目录的展开清单（目录默认收起，只记展开的；与暂停名单/标签一样属于视图状态）
-    function emptyView() { return { paused: [], shots: {}, openedTabs: [], expanded: [] }; }
+    // 各面板的标签状态：面板名 → { tabs: 打开顺序, active: 活跃那个 }。
+    //   center（内容面板）的 key = content/ 下的路径（文件或目录）；right（编辑器）的 key = 条目 id。
+    function emptyPanels() { return { center: { tabs: [], active: '' }, right: { tabs: [], active: '' } }; }
+    // expanded：目录的展开清单（目录默认收起，只记展开的）；paused/shots/panels 同理，都是视图状态
+    function emptyView() { return { paused: [], shots: {}, expanded: [], panels: emptyPanels() }; }
     function sanitizeView(raw, ids) {
         const v = emptyView();
         if (!raw || typeof raw !== 'object') return v;
@@ -380,10 +449,30 @@
         if (Array.isArray(raw.expanded)) {
             v.expanded = raw.expanded.filter((d) => typeof d === 'string' && DIR_KEY_RE.test(d) && d !== 'content/');
         }
-        if (Array.isArray(raw.openedTabs)) {
-            const seen = new Set();
-            v.openedTabs = raw.openedTabs.filter((id) => set.has(id) && !seen.has(id) && seen.add(id)).slice(0, 8);
-        }
+        // 各面板的标签：center 收 content/ 下的路径（文件或目录），right 只收这一份存档认得的条目 id。
+        // 去重 + 截断都做一遍（存档是手写 / 老版本产的，形态不可信）；active 落空就退回第一个。
+        const dedup = (list, ok) => {
+            const seen = new Set(), out = [];
+            for (const k of (Array.isArray(list) ? list : [])) {
+                if (!ok(k) || seen.has(k)) continue;
+                seen.add(k); out.push(k);
+            }
+            return out.slice(0, 24);
+        };
+        const pathOk = (k) => typeof k === 'string' && (isFileKey(k) || (DIR_KEY_RE.test(k) && k !== CONTENT_ROOT));
+        const idOk = (k) => typeof k === 'string' && set.has(k);
+        const pIn = (raw.panels && typeof raw.panels === 'object') ? raw.panels : null;
+        const cIn = (pIn && pIn.center && typeof pIn.center === 'object') ? pIn.center : null;
+        const rIn = (pIn && pIn.right && typeof pIn.right === 'object') ? pIn.right : null;
+        // 只有一根 openedTabs 的老存档：那时只有右栏有标签 → 整根迁到 panels.right
+        const rSrc = rIn ? rIn.tabs : raw.openedTabs;
+        const cTabs = dedup(cIn ? cIn.tabs : [], pathOk);
+        const rTabs = dedup(rSrc, idOk);
+        const pick = (list, want) => (list.indexOf(want) >= 0 ? want : (list[0] || ''));
+        v.panels = {
+            center: { tabs: cTabs, active: pick(cTabs, cIn && cIn.active) },
+            right: { tabs: rTabs, active: pick(rTabs, rIn && rIn.active) },
+        };
         if (raw.shots && typeof raw.shots === 'object') {
             for (const [k, url] of Object.entries(raw.shots)) {
                 // 只收本项目认得的 key + 指向 /api/shots/ 的地址：图本身在 content/Snapshots/，存档里不塞二进制
@@ -487,8 +576,15 @@
         DOC = doc;
         lastSaved = entryDocJson(DOC);
         drafts.clear();
-        const want = ((doc.view && doc.view.openedTabs) || [])[0];   // 还原上次开着的标签（格子若已被删就退回空态）
-        selected = want && entryOf(want) ? want : '';
+        // 还原各面板开着的标签。center 只需摆状态（活跃那条由随后的 renderCenter() 挂上，其余等被点开再挂）；
+        // right 同理，活跃的那个默认取第一个，一个都不剩就回空态。
+        // charts 此刻还可能是空的（本文档的 charts 由 mergeDspsIntoDoc 从磁盘填）——那种情况下先原样收下，
+        // 等 mergeDspsIntoDoc() 里的 pruneTabs() 拿真实条目清单清掉已删的那些。
+        const pv = (doc.view && doc.view.panels) || null;
+        restoreCenter(pv && pv.center);
+        const wantTabs = ((pv && pv.right && pv.right.tabs) || (doc.view && doc.view.openedTabs) || []).slice();
+        openTabs = DOC.charts.length ? wantTabs.filter((id) => !!entryOf(id)) : wantTabs;
+        selected = (pv && pv.right && openTabs.indexOf(pv.right.active) >= 0) ? pv.right.active : (openTabs[0] || '');
         bindDraft();
         syncEditorInputs();
         labSync(true);
@@ -709,7 +805,63 @@
     // 位图 = 实测宽 × dpr → CSS 尺寸与位图永远 1:1，任何宽度下文字都不发虚。
     const CH = 132, LAB_C_H = 112;   // 网格各格 / 右栏输出图 / 右栏逐级图各自的画布高
     const charts = [];              // 参与主循环绘制的全部画布（中间面板的视图画布 + 右栏输出图 + 右栏逐级卡）
-    let selected = '';              // 右栏编辑器当前目标：我的图 id，或 SCRATCH_ID（自由探索草稿）；'' = 空态
+    let selected = '';              // 右栏当前活跃标签：我的图 id，或 SCRATCH_ID（自由探索草稿）；'' = 空态
+    let openTabs = [];              // 右栏打开着的标签（按打开顺序）；selected 是其中活跃的那个
+    // ---------- 多面板：两条分割条拖宽度（中间面板自动吃剩余） ----------
+    // 宽度只存本机（localStorage）—— 面板尺寸是"这台机器这块屏"的偏好，跟项目走的 DOC 不是一回事（同 a4Ref）。
+    const SPLIT_KEY = 'dspLabSplits';
+    const SPLIT_LIM = { tree: [140, 560], lab: [240, 760] };
+    const SPLIT_DEF = { tree: 216, lab: 372 };
+    const clampNum = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const splits = (() => {
+        const d = { ...SPLIT_DEF };
+        let raw = null;
+        try { raw = JSON.parse(safeGet(SPLIT_KEY) || 'null'); } catch (e) { raw = null; }
+        if (raw && typeof raw === 'object') {
+            for (const k of ['tree', 'lab']) {
+                if (Number.isFinite(raw[k])) d[k] = clampNum(raw[k], SPLIT_LIM[k][0], SPLIT_LIM[k][1]);
+            }
+        }
+        return d;
+    })();
+    const wrapEl = document.querySelector('.wrap');
+    function applySplits() {
+        const r = document.documentElement.style;
+        r.setProperty('--w-tree', splits.tree + 'px');
+        r.setProperty('--w-lab', splits.lab + 'px');
+        // 并排放不下（左 + 中420 + 右 + 两条分割条 + gap/padding）就交给 flex-wrap 换行，并关掉吸附与分割条
+        wrapEl.classList.toggle('narrow', window.innerWidth < splits.tree + splits.lab + 420 + 10 * 2 + 10 * 2 + 24);
+    }
+    function persistSplits() { try { localStorage.setItem(SPLIT_KEY, JSON.stringify(splits)); } catch (e) {} }
+    for (const sp of document.querySelectorAll('.split')) {
+        const side = sp.dataset.fixed;               // 'tree' 向右变宽 / 'lab' 向左变宽（.mid 永远 flex:1 吃剩余）
+        sp.addEventListener('dblclick', () => { splits[side] = SPLIT_DEF[side]; applySplits(); persistSplits(); });
+        sp.addEventListener('pointerdown', (ev) => {
+            // 不 preventDefault：那会连带压掉 dblclick（双击复位）的兼容事件；防选中交给 user-select:none
+            const x0 = ev.clientX, w0 = splits[side];
+            sp.setPointerCapture(ev.pointerId);
+            sp.classList.add('drag');
+            const move = (e2) => {
+                const d = e2.clientX - x0;
+                const w = clampNum(side === 'tree' ? w0 + d : w0 - d, SPLIT_LIM[side][0], SPLIT_LIM[side][1]);
+                if (w === splits[side]) return;
+                splits[side] = w;
+                applySplits();
+            };
+            const up = () => {
+                sp.classList.remove('drag');
+                sp.removeEventListener('pointermove', move);
+                sp.removeEventListener('pointerup', up);
+                if (sp.hasPointerCapture(ev.pointerId)) sp.releasePointerCapture(ev.pointerId);
+                persistSplits();
+                refitAll();               // 拖完才重建位图：拖拽过程中位图按旧宽拉伸，收手立刻恢复清晰
+            };
+            sp.addEventListener('pointermove', move);
+            sp.addEventListener('pointerup', up);
+        });
+    }
+    window.addEventListener('resize', applySplits);
+    applySplits();
     // 全局图例：12 音级色块 + 音名，各图共用（画线不再逐条标音名）
     (function buildLegend() {
         const box = document.getElementById('legend');
@@ -753,6 +905,9 @@
         for (const nd of mergedTree()) treeEl.appendChild(buildTreeNode(nd));
         applyDirExpand();                             // 重建后把展开状态贴回去（默认全收起）
         syncTreeFiles();
+        // 树的重建 = 磁盘清单变了（增删 / 改名 / 载入新文档）→ 内容面板各标签的卡片也过时了，
+        // 活跃那个立刻按新数据重挂，其余等被点开时再重挂（见 centerInvalidate）。
+        centerInvalidate();
     }
     // 目录骨架（TREE）× 文件清单（FILES）→ 渲染用的树：目录在前，文件按名排在各目录末尾
     function mergedTree() {
@@ -777,29 +932,28 @@
         return build(TREE, CONTENT_ROOT);
     }
 
-    // ---------- 中心面板路由：open({ file, panel, viewer }) ----------
-    // 中间区域是一块可换视图的面板，装什么由 open() 决定：
-    //   open({ file: 'content/Templates/inv+zscore.json' }) → viewer=dspview     单个文件的链路视图
-    //   open({ file: 'content/My dsps/untitled.json' })      → viewer=dspview     同上（我的图那条）
-    //   open({ file: 'content/Templates/' })                → viewer=dsplistview  某个目录的列表视图
-    //   open({ file: '' })                                  → 回默认落地目录（Templates 列表）
-    // viewer 可显式传（校验白名单）；不传就按 file 形态推：以 / 结尾 = 目录 → 列表，否则 = 文件 → 单视图。
-    // panel 目前只认 'center'（左栏是树、右栏是编辑器，都不走这套路由），传别的直接忽略。
+    // ---------- 中心面板：视图注册表 + 多标签（open({ file, panel, viewer })） ----------
+    // 中间区域是一块「多标签」面板，每条标签装什么由它自己的 view 决定：
+    //   content/Templates/xxx.json → dspview     单个文件的链路视图
+    //   content/Templates/         → dsplistview 某个目录的列表视图
+    //   content/Compares/x.cmpv    → dsplistview 对比视图（把 .cmpv 里列的目标渲染成卡片列表）
+    // 标签的身份 = key（content/ 下的路径）；同 key 只开一条，重复打开 = 激活它。
+    // 每条标签 = 一个 pane：自己一块 DOM、自己一批画布、自己一个"在途渲染"代号（token）。
+    // 非活跃的 pane 留在 DOM 里但 hidden —— 内容与滚动位置都不丢，画布也一起挂 hidden（主循环跳过，不空算）。
     const HOME_DIR = DIR_TPL;                // 默认落地：出厂预设目录（content/Templates/）
-    const VIEWS = ['dsplistview', 'dspview'];
+    const VIEWS = ['dsplistview', 'dspview']; // 白名单：view 名不认识就按 file 形态重推
     const LIST_C_H = 76, ONE_C_H = 200;      // 列表卡片预览 / 单文件大图各自的画布高
-    let OPEN = { file: HOME_DIR, panel: 'center', viewer: 'dsplistview' };
-    let listSel = '';                        // dsplistview 里选中的卡片（单击）；双击才打开这一条
     const treeSel = new Set();               // 树里选中的路径集合（Shift/Ctrl 多选，纯 UI 状态、不进存档）
     let treeAnchor = '';                     // 范围选择的锚点（最近一次普通 / Ctrl 点击的那一行）
-    const viewCharts = [];                   // 本视图自建的画布（换视图时整批摘除）
     const TREE = [];                         // /api/tree 拉回的目录/文件树（左栏渲染的唯一来源）
     const FILES = [];                        // 摊平后的 .json 条目（itemOf / itemsOf 的索引）
     const fileCache = new Map();             // file → 条目（单文件接口取回的、树清单里没有的）
     const treeFileNodes = new Map();         // file → { row, tn }，给 syncTreeFiles 就地刷选中态与标题
+    const midTabsEl = document.getElementById('midTabs');
+    const midHostEl = document.getElementById('midHost');
     const crumbEl = document.getElementById('crumb');
-    const listEl = document.getElementById('dsplist');
-    const oneEl = document.getElementById('dspview');
+    // 起手就先摆上出厂预设目录那条标签：服务端没有存档时 adoptDoc 不会被调，中间区域不该是空的
+    const center = { tabs: [HOME_DIR], active: HOME_DIR, panes: new Map(), mark: 0 };
     // 空 file = 回默认落地目录（Templates 列表）；以 / 结尾 = 目录列表；.cmpv = 对比视图（同样用卡片列表）；否则 = 单文件链路视图
     function viewerOf(file) {
         if (!file || file.endsWith('/') || isCmpvFile(file)) return 'dsplistview';
@@ -809,40 +963,285 @@
     // 这个目录里的 .json 条目（各目录结构相同，渲染代码完全共用）
     function itemsOf(dir) { return FILES.filter((t) => dirOf(t.file) === dir); }
     function itemOf(file) { return FILES.find((t) => t.file === file) || null; }
-    // 唯一的路由入口：改 OPEN → 重画中间面板 → 同步树上的选中态
+    // 标签标题：目录取末段，文件优先用磁盘条目里的标题，取不到退回文件名（stem）
+    function docTitle(key) {
+        if (key.endsWith('/')) {
+            const s = key.replace(/\/+$/, '');
+            return s.slice(s.lastIndexOf('/') + 1) || relToRoot(key) || './';
+        }
+        const t = itemOf(key);
+        return (t && t.title) || stemOf(key);
+    }
+    // ---- 通用标签条：调用方只声明「有哪些 / 哪个活跃 / 标题 / 是否脏 / 怎么切 / 怎么关」，DOM 与事件都归这里 ----
+    // 签名没变就不重建 DOM：refreshDirty 每敲一个字都会调它，重建会把滚动位置与焦点打断。
+    function makeTabStrip(opts) {
+        const host = opts.host;
+        const parent = host.parentNode;
+        // ---- 单行横向滚动条（自绘）----
+        // 原生横向条会占 5~11px 并把"页签站在分隔线上"的关系撑断，所以：原生条隐藏，这里画一根 3px 的细条，
+        // 正好压在那条分隔线上。它是 host 的兄弟（绝对定位），不在滚动容器里，因此不随内容滚。
+        const bar = document.createElement('div');
+        bar.className = 'panebar';
+        bar.hidden = true;
+        parent.appendChild(bar);
+        function syncBar() {
+            const seen = host.clientWidth, total = host.scrollWidth;   // seen = 滚动口宽；total = 内容总宽
+            if (host.hidden || seen <= 0 || total <= seen + 1) { bar.hidden = true; return; }
+            const hr = host.getBoundingClientRect(), pr = parent.getBoundingClientRect();
+            // 可视轨道：被父容器裁过的那一段（右栏的标签条靠负外边距贴边，两边正常正好对齐；改内边距时也不跑偏）
+            const x0 = Math.max(0, hr.left - (pr.left + parent.clientLeft));
+            const track = Math.min(seen, parent.clientWidth - x0);
+            if (track <= 8) { bar.hidden = true; return; }
+            const w = Math.max(24, Math.round(track * seen / total));
+            const max = total - seen;
+            bar._max = max;
+            bar._span = track - w;
+            bar.hidden = false;
+            bar.style.width = w + 'px';
+            bar.style.left = (x0 + (max > 0 ? (host.scrollLeft / max) * bar._span : 0)) + 'px';
+            bar.style.top = (hr.bottom - pr.top - parent.clientTop - 2) + 'px';   // 压在分隔线上
+        }
+        host.addEventListener('scroll', syncBar, { passive: true });
+        if (window.ResizeObserver) new ResizeObserver(syncBar).observe(host);   // 拖分割条改宽时跟着重算
+        // 拖滑块 = 滚动（按比例映射，不按像素 1:1，短滑块也能拖到底）
+        bar.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            const max = bar._max, span = bar._span;
+            if (!(max > 0) || !(span > 0)) return;
+            const x0 = ev.clientX, s0 = host.scrollLeft;
+            bar.classList.add('hot');
+            bar.setPointerCapture(ev.pointerId);
+            const move = (e2) => { host.scrollLeft = s0 + (e2.clientX - x0) * max / span; };
+            const up = () => {
+                bar.classList.remove('hot');
+                bar.removeEventListener('pointermove', move);
+                bar.removeEventListener('pointerup', up);
+                if (bar.hasPointerCapture(ev.pointerId)) bar.releasePointerCapture(ev.pointerId);
+            };
+            bar.addEventListener('pointermove', move);
+            bar.addEventListener('pointerup', up);
+        });
+        // 滚动：overflow-x 的容器只吃"横向"滚轮（deltaX），竖滚会冒泡给页面 / 它所在的那一栏 —— 大家抱怨的
+        // "滚轮滚的是页面不是标签"就是这个。这里把竖向 delta 翻译成横向滚动，只在真的溢出时才拦。
+        host.addEventListener('wheel', (ev) => {
+            if (ev.ctrlKey) return;                                       // Ctrl+滚轮是缩放，不抢
+            if (host.scrollWidth <= host.clientWidth + 1) return;         // 没溢出 → 不拦，照常滚页面
+            // deltaMode：0 = 像素、1 = 行、2 = 页。有的鼠标 / Firefox 给的是"行"(±3)，
+            // 原样加进 scrollLeft 等于没动（这就是"滚了但好像没反应"的那种）——按模式换算成像素。
+            const k = ev.deltaMode === 1 ? 16 : (ev.deltaMode === 2 ? host.clientWidth : 1);
+            const d = (Math.abs(ev.deltaY) >= Math.abs(ev.deltaX) ? ev.deltaY : ev.deltaX) * k;
+            if (!d) return;
+            ev.preventDefault();
+            host.scrollLeft += d;
+        }, { passive: false });
+        let sig = '';
+        return function renderTabs() {
+            const ids = opts.tabs();
+            const s = ids.map((id) => id + '\u0001' + opts.title(id) + (opts.dirty(id) ? '\u0001*' : '') + (id === opts.active() ? '\u0001^' : '')).join('\u0002');
+            if (s === sig) return;
+            sig = s;
+            host.hidden = !ids.length;
+            host.textContent = '';
+            for (const id of ids) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'panetab' + (id === opts.active() ? ' on' : '') + (opts.dirty(id) ? ' dirty' : '');
+                b.title = opts.hint ? opts.hint(id) : id;
+                const ic = opts.icon ? opts.icon(id) : '';
+                if (ic) { const g = document.createElement('span'); g.className = 'ti'; g.textContent = ic; b.appendChild(g); }
+                const t = document.createElement('span'); t.className = 'tt'; t.textContent = opts.title(id);
+                b.appendChild(t);
+                if (opts.dirty(id)) { const d = document.createElement('span'); d.className = 'td'; b.appendChild(d); }
+                const x = document.createElement('span'); x.className = 'tx'; x.textContent = '✕';
+                b.appendChild(x);
+                b.addEventListener('click', (ev) => { if (ev.target !== x) opts.activate(id); });
+                b.addEventListener('auxclick', (ev) => { if (ev.button === 1) { ev.preventDefault(); opts.close(id); } });   // 中键关闭，同 VSCode
+                x.addEventListener('click', (ev) => { ev.stopPropagation(); opts.close(id); });
+                host.appendChild(b);
+            }
+            // 重建会把 scrollLeft 归零 → 活跃那条可能在视野外（新建 / 切到右边的标签时）。
+            // 只改横向 scrollLeft，不碰页面滚动。
+            const on = host.querySelector('.panetab.on');
+            if (on) {
+                const hr = host.getBoundingClientRect(), tr = on.getBoundingClientRect();
+                if (tr.left < hr.left) host.scrollLeft -= (hr.left - tr.left);
+                else if (tr.right > hr.right) host.scrollLeft += (tr.right - hr.right);
+            }
+            syncBar();          // 标签数量 / 宽度变了 → 细滚动条的长度与位置跟着重算
+        };
+    }
+    const renderCenterTabs = makeTabStrip({
+        host: midTabsEl,
+        tabs: () => center.tabs,
+        active: () => center.active,
+        title: docTitle,
+        dirty: () => false,          // 内容面板的标签都是只读预览（改的是内存里的链，要固化走「保存 / 从模板新建」）
+        // 类型图标与左栏树同一套字形：目录 / 对比视图 / 普通文件
+        icon: (k) => (k.endsWith('/') ? '📁' : (isCmpvFile(k) ? '⇄' : '📄')),
+        hint: (k) => k,
+        activate: (k) => centerActivate(k),
+        close: (k) => centerClose(k),
+    });
+    // Pane：一条标签的运行时。el 懒创建（首次挂载才建），非活跃时留在 DOM 里 hidden。
+    function paneOf(key) {
+        let p = center.panes.get(key);
+        if (!p) {
+            p = { key, view: viewerOf(key), el: null, mounted: false, stale: false, charts: [], sel: '', token: 0 };
+            center.panes.set(key, p);
+        }
+        return p;
+    }
+    // 摘掉这一 pane 的全部画布 + 作废在途渲染。主循环只认 charts 一张表，不摘就会一直空算。
+    function paneDetach(p) {
+        if (!p) return;
+        for (const ch of p.charts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
+        p.charts.length = 0;
+        p.token = ++center.mark;
+    }
+    // 画布登记进 pane：同时记进主循环的 charts；不在活跃标签上就先挂 hidden（不 compute / 不 draw）
+    function addPaneChart(p, ch) {
+        p.charts.push(ch);
+        charts.push(ch);
+        ch.hidden = center.active !== p.key;
+    }
+    function paneShow(p, on) {
+        if (!p) return;
+        if (p.el) p.el.hidden = !on;
+        for (const ch of p.charts) ch.hidden = !on;
+    }
+    // view 名 → 样式类名（view 名是路由用的，类名沿用原来的 .dsplist / .dspview，样式不用改）
+    const VIEW_CLASS = { dsplistview: 'dsplist', dspview: 'dspview' };
+    // 挂载 / 重挂：从 pane.key + pane.view 把 DOM 与画布整块重建
+    function paneMount(p) {
+        paneDetach(p);
+        if (!p.el) { p.el = document.createElement('div'); midHostEl.appendChild(p.el); }
+        p.el.className = 'tabpane ' + (VIEW_CLASS[p.view] || 'dspview');
+        p.el.textContent = '';
+        p.token = ++center.mark;
+        p.mounted = true;
+        p.stale = false;
+        paneShow(p, center.active === p.key);   // 先定显隐再出图：隐藏着的容器量不出宽度（fitCanvas 会退回 80）
+        if (p.view === 'dspview') renderOne(p);
+        else if (isCmpvFile(p.key)) renderCmpvList(p);   // 对比视图：把 .cmpv 的目标渲染成卡片列表
+        else renderList(p);
+    }
+    // 唯一的路由入口：开 / 切到某条标签（已开过就激活，没开过就新建）
     function open(spec) {
         const s = spec || {};
         let file = typeof s.file === 'string' ? s.file.trim() : '';
-        const home = !file;                                      // 空 file = 回默认落地目录
-        if (home) file = HOME_DIR;
-        if ((s.panel || 'center') !== 'center') return;          // 目前只有中间面板参与
-        let v = home ? 'dsplistview' : (s.viewer || viewerOf(file));
-        if (VIEWS.indexOf(v) < 0) v = viewerOf(file);            // viewer 名不认识 → 按 file 重推
-        OPEN = { file, panel: 'center', viewer: v };
-        if (v === 'dspview') listSel = file;     // 打开过的那一条，退回列表时保持选中
+        if (!file) file = HOME_DIR;                              // 空 file = 回默认落地目录
+        if ((s.panel || 'center') !== 'center') return;           // 目前只有中间面板参与
+        let v = s.viewer || viewerOf(file);
+        if (VIEWS.indexOf(v) < 0) v = viewerOf(file);             // viewer 名不认识 → 按 file 重推
+        const p = paneOf(file);
+        if (p.view !== v) { p.view = v; p.mounted = false; paneDetach(p); }   // 同一条换 view：先摘旧的
+        if (center.tabs.indexOf(file) < 0) center.tabs.push(file);
+        if (v === 'dspview') p.sel = file;   // 打开过的那一条，退回列表时保持选中
         // 树里同步选中：多选状态下打开其中一条不打断整批选择，其它来源（列表/面包屑）打开则单选它
         if (!treeSel.has(file)) { setTreeSel([file]); treeAnchor = file; }
-        renderCenter();
+        centerActivate(file);
         revealInTree(file);      // 展开沿路目录并滚到它：新建的条目打开后要能在树里看见
     }
-    function renderCenter() {
-        clearViewCharts();
-        listEl.hidden = true; oneEl.hidden = true;
-        if (OPEN.viewer === 'dspview') renderOne(OPEN.file);
-        else if (isCmpvFile(OPEN.file)) renderCmpvList(OPEN.file);   // 对比视图：把 .cmpv 的目标渲染成卡片列表
-        else renderList();
+    function centerActivate(key) {
+        if (center.tabs.indexOf(key) < 0) return;
+        const clean = !archiveDirty();   // 先取：写 panels 本身就会让 DOC 与基线不等
+        for (const [k, p] of center.panes) if (k !== key) paneShow(p, false);
+        center.active = key;
+        const p = paneOf(key);
+        if (!p.mounted || p.stale) paneMount(p);
+        else paneShow(p, true);
+        refitAll();              // 刚从 display:none 出来（或刚挂上），位图得按实测宽度重建
         renderCrumb();
+        renderCenterTabs();
+        updateCenterEmpty();
+        savePanels();
         syncTreeFiles();
-        syncGlobalPlay();        // 换视图 = 换了一批可暂停的画布，全局按钮文案要重算
+        syncGlobalPlay();        // 换了一批可暂停的画布，全局按钮文案要重算
+        refreshDirty();
+        viewAutoSave(clean);     // 切标签 = 视图状态变了，顺手落盘（成品侧没有别的待存改动时才写）
     }
-    // 视图自建的画布要跟着视图一起消失：主循环只认 charts 一张表，不摘就会一直空算
-    function clearViewCharts() {
-        for (const ch of viewCharts) { const i = charts.indexOf(ch); if (i >= 0) charts.splice(i, 1); }
-        viewCharts.length = 0;
+    // 关闭某条标签（内容面板的标签都是只读预览，没有"要不要保存"可问，直接关）
+    function centerClose(key) {
+        const i = center.tabs.indexOf(key);
+        if (i < 0) return;
+        const clean = !archiveDirty();
+        const p = center.panes.get(key);
+        paneDetach(p);
+        if (p && p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+        center.panes.delete(key);
+        center.tabs.splice(i, 1);
+        if (center.active === key) {
+            center.active = '';
+            const next = center.tabs[i] || center.tabs[i - 1] || '';
+            if (next) centerActivate(next);
+            else { renderCrumb(); renderCenterTabs(); updateCenterEmpty(); savePanels(); syncGlobalPlay(); refreshDirty(); }
+        } else { renderCenterTabs(); updateCenterEmpty(); savePanels(); }
+        viewAutoSave(clean);
+    }
+    // 数据变了（磁盘清单 / 条目内容）：所有 pane 标脏，活跃那个立刻按新数据重挂，其余等被激活时再重挂
+    let centerBusy = false;
+    function centerInvalidate() {
+        for (const [, p] of center.panes) p.stale = true;
+        if (centerBusy) return;
+        centerBusy = true;
+        try { renderCenter(); } finally { centerBusy = false; }
+    }
+    // 重挂当前活跃 pane（刷新数据 / 还原参数 / 改名后调）—— 等价于旧版的"整块重画中间面板"
+    function renderCenter() {
+        const key = center.active;
+        if (key && center.tabs.indexOf(key) >= 0) paneMount(paneOf(key));
+        renderCrumb();
+        renderCenterTabs();
+        updateCenterEmpty();
+    }
+    // 标签全关掉后的空态提示（中间区域不至于一片空白）
+    function updateCenterEmpty() {
+        const hint = midHostEl.querySelector('.pane-empty');
+        if (!center.tabs.length) {
+            if (hint) return;
+            const d = document.createElement('div');
+            d.className = 'tpl-empty pane-empty';
+            d.textContent = '左栏点文件行 / 目录行即可在这里打开 —— 可以同时开多条标签';
+            midHostEl.appendChild(d);
+        } else if (hint) hint.remove();
+    }
+    // 磁盘上已经没有的文件（被删 / 改名）→ 连标签一起摘。目录不算（空目录也允许开着）。
+    // 清单没拉到（离线）时一律不动 —— 宁可留一条打不开的标签，也不要清掉用户开着的视图。
+    function pruneCenter() {
+        if (!FILES.length) return;
+        const keep = center.tabs.filter((k) => k.endsWith('/') || !!itemOf(k));
+        if (keep.length === center.tabs.length) return;
+        for (const k of center.tabs) {
+            if (keep.indexOf(k) >= 0) continue;
+            const p = center.panes.get(k);
+            paneDetach(p);
+            if (p && p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+            center.panes.delete(k);
+        }
+        center.tabs = keep;
+        if (center.tabs.indexOf(center.active) < 0) center.active = center.tabs[0] || '';
+        if (!center.tabs.length) { center.tabs = [HOME_DIR]; center.active = HOME_DIR; }
+        renderCenterTabs();
+        savePanels();
+    }
+    // 按存档还原内容面板的标签（只摆状态不挂载：活跃那条由随后的 renderCenter() 挂上，其余等被点开再挂）
+    function restoreCenter(pc) {
+        for (const [, p] of center.panes) {
+            paneDetach(p);
+            if (p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+        }
+        center.panes.clear();
+        center.tabs = (pc && Array.isArray(pc.tabs)) ? pc.tabs.filter((k) => typeof k === 'string').slice() : [];
+        center.active = (pc && center.tabs.indexOf(pc.active) >= 0) ? pc.active : (center.tabs[0] || '');
+        if (!center.tabs.length) { center.tabs = [HOME_DIR]; center.active = HOME_DIR; }   // 空档 → 落回出厂预设目录
+        renderCenterTabs();
+        updateCenterEmpty();
     }
     // 面包屑：相对 ROOT（content/）的路径 —— 目录 › 文件。点前面任一段 = 往上一级（最后一段是当前位置，不可点）
     function renderCrumb() {
         crumbEl.textContent = '';
+        const key = center.active;
+        if (!key) return;
         const seg = (txt, file, now, title) => {
             const b = document.createElement('span');
             b.className = 'seg' + (now ? ' now' : '');
@@ -855,10 +1254,10 @@
         const sp = () => { const s = document.createElement('span'); s.className = 'sp'; s.textContent = '›'; crumbEl.appendChild(s); };
         // content/ = ROOT：面包屑就是相对根的路径（目录 › 文件），根段本身不写出来。
         // 当前是"某个文件"时（链路视图，或卡片列表渲染的 .cmpv 对比），最后一段是这个文件本身，前面的目录段可点回列表。
-        const dir = dirOf(OPEN.file);
-        const onFile = OPEN.viewer === 'dspview' || isCmpvFile(OPEN.file);
+        const dir = dirOf(key);
+        const onFile = viewerOf(key) === 'dspview' || isCmpvFile(key);
         seg(relToRoot(dir) || './', dir, !onFile, dir + ' 的列表视图');
-        if (onFile) { sp(); seg(fileNameOf(OPEN.file), OPEN.file, true, OPEN.file); }
+        if (onFile) { sp(); seg(fileNameOf(key), key, true, key); }
     }
     // 文件条目的"底部一条"= 参数条 + 播放按钮（画面在上、控件在下）。
     // 参数改的是内存里这一条链：模板是只读文件（要固化就「从模板新建」）；
@@ -905,20 +1304,22 @@
         if (ch.paused) paintShot(ch);
         renderPlayBtn(ch);
     }
-    // dsplistview 卡片：单击 = 只选中（不切视图），双击才打开这一条的链路视图
-    function setListSel(file) {
-        if (file === listSel) return;
-        listSel = file;
-        for (const c of listEl.children) {
-            if (c.classList && c.classList.contains('tcard')) c.classList.toggle('sel', c.dataset.file === listSel);
+    // dsplistview 卡片：单击 = 只选中（不切视图），双击才打开这一条的链路视图。
+    // 选中态是 pane 自己的（同一条 DSP 在别的标签里选中与这里无关）。
+    function setPaneSel(p, file) {
+        if (file === p.sel) return;
+        p.sel = file;
+        if (!p.el) return;
+        for (const c of p.el.children) {
+            if (c.classList && c.classList.contains('tcard')) c.classList.toggle('sel', c.dataset.file === p.sel);
         }
     }
     // 一张卡片 = 一个文件：路径 / 标题 / 管道摘要 / 实时画布 / 参数条 + 播放按钮。
     // 目录列表与对比视图共用这套（对比视图只是数据源换成 .cmpv 里列的 targets）。
-    function buildListCard(t, host) {
+    function buildListCard(p, t) {
         const stages = stagesOfItem(t);
         const card = document.createElement('div');
-        card.className = 'tcard' + (t.file === listSel ? ' sel' : '');
+        card.className = 'tcard' + (t.file === p.sel ? ' sel' : '');
         card.dataset.file = t.file;      // 单击选中时就地刷高亮用
         const nf = document.createElement('div'); nf.className = 'tfile'; nf.textContent = t.file;
         const tt = document.createElement('div'); tt.className = 'ttitle'; tt.textContent = t.title;
@@ -928,9 +1329,9 @@
         ds.textContent = t.desc || '（无说明）';
         card.append(nf, tt, pp, cv);
         card.title = t.file + '\n单击：选中；双击：打开这一条（链路视图）';
-        card.addEventListener('click', (ev) => { if (ev.detail > 1) return; setListSel(t.file); });
+        card.addEventListener('click', (ev) => { if (ev.detail > 1) return; setPaneSel(p, t.file); });
         card.addEventListener('dblclick', () => open({ file: t.file }));
-        host.appendChild(card);
+        p.el.appendChild(card);
         const ch = {
             file: t.file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: LIST_C_H,
             cv, ctx: cv.getContext('2d'), pipeEl: pp, card, isView: true,
@@ -939,23 +1340,41 @@
         card.appendChild(ds);
         ch.w = fitCanvas(cv, LIST_C_H);
         bindViewPause(ch);
-        charts.push(ch); viewCharts.push(ch);
+        addPaneChart(p, ch);
         return ch;
     }
+    // 目录列表里的对比视图（.cmpv）：虚线卡片，双击才打开它（打开后是"目标卡片列表"）。
+    // 它自己不跑任何链路，所以没有画布、也没有参数条。
+    function buildCmpvCard(p, t) {
+        const n = Array.isArray(t.targets) ? t.targets.length : 0;
+        const card = document.createElement('div');
+        card.className = 'tcard cmpv' + (t.file === p.sel ? ' sel' : '');
+        card.dataset.file = t.file;
+        const nf = document.createElement('div'); nf.className = 'tfile'; nf.textContent = t.file;
+        const tt = document.createElement('div'); tt.className = 'ttitle'; tt.textContent = t.title || stemOf(t.file);
+        const pp = document.createElement('div'); pp.className = 'pipe'; pp.textContent = `对比 ${n} 项`;
+        const ds = document.createElement('div'); ds.className = 'tdesc';
+        ds.textContent = t.desc || '（无说明）';
+        card.append(nf, tt, pp, ds);
+        card.title = t.file + '\n单击：选中；双击：打开这份对比（被引用的 DSP 文件不动）';
+        card.addEventListener('click', (ev) => { if (ev.detail > 1) return; setPaneSel(p, t.file); });
+        card.addEventListener('dblclick', () => open({ file: t.file }));
+        p.el.appendChild(card);
+    }
     // dsplistview：某个目录的列表。一格 = 一个文件，小画布用实时数据跑同一条链
-    function renderList() {
-        const dir = dirOf(OPEN.file);
+    function renderList(p) {
+        const dir = dirOf(p.key);
         const items = itemsOf(dir);
-        listEl.hidden = false;
-        listEl.textContent = '';
+        const host = p.el;
+        host.textContent = '';
         if (!items.length) {
             const e = document.createElement('div'); e.className = 'tpl-empty';
             e.textContent = dir + ' 下还没有文件'
                 + (dir === DIR_DSP ? '（右键这一行「新建 DSP」，或在 content/Templates/ 的某一行上右键「从模板新建」）' : '');
-            listEl.appendChild(e);
+            host.appendChild(e);
             return;
         }
-        for (const t of items) (Array.isArray(t.targets) ? buildCmpvCard : buildListCard)(t, listEl);
+        for (const t of items) (Array.isArray(t.targets) ? buildCmpvCard : buildListCard)(p, t);
     }
     // 缺失目标的占位卡片：目标文件已被删 / 改名时在原位占个位（不可点、不跑链路）
     function buildMissingCard(file, host) {
@@ -972,52 +1391,55 @@
     }
     // 对比视图（.cmpv）：读它列的目标文件，用同一套卡片渲染。
     // 个别目标不在 → 在原位给一张缺失占位卡；全都找不到才只给一句提示。
-    async function renderCmpvList(file) {
-        listEl.hidden = false;
-        listEl.textContent = '';
+    async function renderCmpvList(p) {
+        const file = p.key, tok = p.token, host = p.el;
+        host.textContent = '';
         const tip = document.createElement('div'); tip.className = 'tpl-empty'; tip.textContent = '读取 ' + file + ' …';
-        listEl.appendChild(tip);
+        host.appendChild(tip);
         const doc = await getItem(file);
-        if (!doc || OPEN.file !== file || OPEN.viewer !== 'dsplistview') return;
-        listEl.textContent = '';
+        // 期间标签被重挂 / 关掉 → 这次渲染作废（token 是这条 pane 每挂一次就换一个的代号）
+        if (!doc || p.token !== tok) return;
+        host.textContent = '';
         const targets = Array.isArray(doc.targets) ? doc.targets : [];
         const loaded = [];
         for (const tf of targets) loaded.push([tf, await getItem(tf)]);
+        if (p.token !== tok) return;
         const missing = loaded.filter(([, t]) => !t).length;
         const head = document.createElement('div');
         head.className = 'cmpv-head';
         head.textContent = `${doc.title || doc.name} · 对比 ${targets.length} 项` + (missing ? ` · 缺失 ${missing}` : '');
         head.title = '来自 ' + file;
-        listEl.appendChild(head);
+        host.appendChild(head);
         if (!targets.length) {
             const e = document.createElement('div'); e.className = 'tpl-empty';
             e.textContent = '这份对比里还没有目标';
-            listEl.appendChild(e);
+            host.appendChild(e);
             return;
         }
         if (missing === targets.length) {           // 全都缺失：只给一句提示，不铺一屏占位
             const e = document.createElement('div'); e.className = 'tpl-empty';
             e.textContent = '这份对比里引用的文件都不在了';
-            listEl.appendChild(e);
+            host.appendChild(e);
             return;
         }
         for (const [tf, t] of loaded) {
-            if (t) buildListCard(t, listEl);
-            else buildMissingCard(tf, listEl);      // 个别缺失 → 原位占位
+            if (t) buildListCard(p, t);
+            else buildMissingCard(tf, host);        // 个别缺失 → 原位占位
         }
+        if (center.active === p.key) refitAll();     // 这一挂发生在切走之后：位图当时按 0 宽量的，补一次
     }
     // dspview：单个文件的预览视图 —— 大画布 + 参数条/播放按钮 + 逐级算子 + 入口按钮。
     // 模板只读（要固化就「从模板新建」）；我的图多了保存 / 编辑 / 复制 / 删除。
-    async function renderOne(file) {
-        oneEl.hidden = false;
-        oneEl.textContent = '';
+    async function renderOne(p) {
+        const file = p.key, tok = p.token, host = p.el;
+        host.textContent = '';
         const load = document.createElement('div'); load.className = 'tpl-empty'; load.textContent = '读取 ' + file + ' …';
-        oneEl.appendChild(load);
+        host.appendChild(load);
         const t = await getItem(file);
-        // 期间用户又点了别的 → 这次渲染作废（renderCenter 已经把视图切成新的了）
-        if (!t || OPEN.file !== file || OPEN.viewer !== 'dspview') return;
+        // 期间标签被重挂 / 关掉 → 这次渲染作废
+        if (!t || p.token !== tok) return;
         const stages = stagesOfItem(t);
-        oneEl.textContent = '';
+        host.textContent = '';
         const nf = document.createElement('div'); nf.className = 'vfile'; nf.textContent = file;
         const vh = document.createElement('div'); vh.className = 'vh'; vh.textContent = t.title;
         const vd = document.createElement('div'); vd.className = 'vdesc'; vd.textContent = t.desc || '（无说明）';
@@ -1054,14 +1476,15 @@
         mk('✕ 关闭', '回到默认目录列表（content/Templates/）', () => open({ file: '' }));
         const ch = {
             file, stages, out: new Float32Array(SFM_PC * CHART_N), w: 0, h: ONE_C_H,
-            cv, ctx: cv.getContext('2d'), pipeEl: pp, card: oneEl, isView: true,
+            cv, ctx: cv.getContext('2d'), pipeEl: pp, card: host, isView: true,
         };
-        oneEl.append(nf, vh, vd, pp, cv);
-        buildFileFoot(oneEl, t, ch);      // 参数条 + 播放/还原：与列表卡片同一套
-        oneEl.append(stbox, tools);
+        host.append(nf, vh, vd, pp, cv);
+        buildFileFoot(host, t, ch);       // 参数条 + 播放/还原：与列表卡片同一套
+        host.append(stbox, tools);
         ch.w = fitCanvas(cv, ONE_C_H);
         bindViewPause(ch);
-        charts.push(ch); viewCharts.push(ch);
+        addPaneChart(p, ch);
+        if (center.active === p.key) refitAll();   // 这一挂发生在切走之后：位图当时按 0 宽量的，补一次
     }
     // 条目的 stages：过一遍 sanitizeStages 再进管道（磁盘文件是手写的，非法 id / 越界参数在这里纠正）。
     // 我的图直接指向 DOC 里同一格 —— 预览与右栏编辑器看的是同一批对象，改哪边都是同一条链。
@@ -1112,8 +1535,9 @@
             else fresh.push({ id, title: it.title, desc: it.desc, stages });
         }
         DOC.charts.push(...fresh);
+        pruneTabs();                        // 磁盘上没有的条目 → 连它的标签一起摘
+        pruneCenter();                      // 内容面板开着但文件已不在的标签，同理
         lastSaved = entryDocJson(DOC);      // 文件就是存档，并完不该报"未落盘"
-        if (selected && !entryOf(selected)) { selected = ''; viewOf().openedTabs = []; }
         drafts.clear(); bindDraft();
         buildTree();                        // 左栏树按最新的磁盘清单重建
         syncEditorInputs(); labSync(true); applyView(); refreshDirty();
@@ -1194,7 +1618,8 @@
         if (!b) return false;
         const i = FILES.findIndex((it) => it.file === file);
         if (i >= 0) FILES.splice(i, 1);
-        if (OPEN.file === file) open({ file: CMPV_DIR });
+        if (center.panes.has(file)) centerClose(file);          // 正开着它 → 连这条标签一起关
+        if (!center.tabs.length) open({ file: CMPV_DIR });      // 关空了 → 落回对比视图目录
         buildTree(); refreshDirty();
         return true;
     }
@@ -1242,7 +1667,7 @@
         }
     }
     // ---------- 树里的多选：Shift = 范围，Ctrl/Cmd = 加/减，Ctrl+A = 全选，Esc = 清空 ----------
-    // treeSel 与 OPEN.file（当前打开的视图）解耦：普通单击 = 打开并单选；带修饰键的单击只改选择，不切视图。
+    // treeSel 与「内容面板当前活跃的标签」解耦：普通单击 = 打开并单选；带修饰键的单击只改选择，不切视图。
     function visibleTreeFiles() {        // 当前真正看得见的行（收起目录里的行 offsetParent 为 null）
         const out = [];
         for (const [file, n] of treeFileNodes) if (n.row.offsetParent !== null) out.push(file);
@@ -1319,11 +1744,19 @@
         const c = DOC.charts.find((x) => x.id === oldStem);
         if (c) c.id = newStem;
         if (drafts.has(oldStem)) { drafts.set(newStem, drafts.get(oldStem)); drafts.delete(oldStem); }
-        if (selected === oldStem) { selected = newStem; viewOf().openedTabs = [newStem]; }
+        const ti = openTabs.indexOf(oldStem);                // 标签栏里也跟着改名（顺序不动）
+        if (ti >= 0) openTabs[ti] = newStem;
+        if (selected === oldStem) selected = newStem;
         if (treeSel.has(oldPath)) { treeSel.delete(oldPath); treeSel.add(newPath); }
         if (treeAnchor === oldPath) treeAnchor = newPath;
-        if (listSel === oldPath) listSel = newPath;
-        if (OPEN.file === oldPath) OPEN.file = newPath;      // 正开着它 → 视图跟着改名
+        for (const [, p] of center.panes) if (p.sel === oldPath) p.sel = newPath;   // 列表里的选中态跟着改名
+        // 内容面板的标签身份就是路径：正开着它 → key / 顺序 / 活跃项一起搬过去
+        const cp = center.panes.get(oldPath);
+        if (cp) { center.panes.delete(oldPath); cp.key = newPath; center.panes.set(newPath, cp); }
+        const cti = center.tabs.indexOf(oldPath);
+        if (cti >= 0) center.tabs[cti] = newPath;
+        if (center.active === oldPath) center.active = newPath;
+        savePanels();
         const v = viewOf();
         v.paused = v.paused.map((k) => (k === oldPath ? newPath : k));
         if (v.shots[oldPath]) { v.shots[newPath] = v.shots[oldPath]; delete v.shots[oldPath]; }
@@ -1635,10 +2068,12 @@
         // 暂停/恢复都顺手存一次：播放状态与快照都在存档里（不提交任何草稿）
         if (!opts || !opts.silent) viewAutoSave(clean);
     }
-    // 全部暂停 = 当前视野里所有"有身份的画布"：中间面板各条（key = 文件路径）
+    // 全部暂停 = 所有打开着的内容面板标签里"有身份的画布"（key = 文件路径，同一条去重）
     function pauseKeys() {
         const out = [];
-        for (const ch of viewCharts) if (ch.file) out.push(ch.file);
+        for (const [, p] of center.panes) {
+            for (const ch of p.charts) if (ch.file && out.indexOf(ch.file) < 0) out.push(ch.file);
+        }
         return out;
     }
     function allPaused() {
@@ -1720,8 +2155,26 @@
     //   · 自由探索草稿（SCRATCH_ID）—— 不落盘；按「保存」会另存为一条新的「我的图」
     // drafts  id → { d: 目标深拷贝, base: 克隆那一刻的快照 JSON }。按需建、切换不清，改动各自留着。
     // DRAFT   只是"当前目标那一份草稿"的引用，省得逐级卡/输入框到处按 id 取。
-    // 「保存」= 把草稿深拷贝回各自 DOC 条目 + 落盘；右上 ✕ = 关掉当前编辑（脏的先问保存/丢弃/取消）。
+    // 「保存」= 把草稿深拷贝回各自 DOC 条目 + 落盘；标签栏 ✕ = 关掉那个标签（脏的先问保存/丢弃/取消）。
     // 与中间面板共用 OPS / computeChart / buildParams，同一条执行路径 —— 右栏只是"另一个编辑入口"。
+    const labTabsEl = document.getElementById('labTabs');
+    // 标签标题取"草稿上的"（有草稿就是正在编辑的标题，跟输入框同步），没草稿才落回条目本身
+    function tabTitle(id) {
+        const r = drafts.get(id);
+        const e = r ? r.d : entryOf(id);
+        return (e && e.title) || '未命名';
+    }
+    // 右栏标签条：与内容面板共用同一套 makeTabStrip（右上 ✕ / 中键关闭 / 脏点 / 顺位激活都在那里）
+    const renderTabs = makeTabStrip({
+        host: labTabsEl,
+        tabs: () => openTabs,
+        active: () => selected,
+        title: tabTitle,
+        dirty: draftDirty,
+        hint: (id) => (id === SCRATCH_ID ? '自由探索（不落盘）' : id),
+        activate: (id) => selectChart(id),
+        close: (id) => closeTab(id),
+    });
     const labEl = document.getElementById('lab');
     const labPipeEl = document.getElementById('labPipe');
     const labTitleEl = document.getElementById('labTitle');
@@ -1796,6 +2249,7 @@
             : (!selected && n ? '还有未写回的草稿' : ''));
         labCloseEl.hidden = !selected;        // 空态没有"正在编辑的东西"可关
         labSaveEl.hidden = false;             // 自由探索也允许保存（= 另存为我的图）
+        renderTabs();                        // 标签栏：活跃态 / 脏点 / 标题跟着刷
         syncTreeFiles();                     // 树上文件行的选中态也跟着刷
     }
     // 草稿 → 输入框。正在输入的那个框跳过，避免打字时被回写打断
@@ -1807,12 +2261,14 @@
         if (document.activeElement !== labTitleEl) labTitleEl.value = DRAFT.title;
         if (document.activeElement !== labDescEl) labDescEl.value = DRAFT.desc;
     }
-    // 把某一格交给右栏编辑（文件行的「编辑」菜单 / dspview 的「✎ 编辑」按钮）。草稿存在 drafts 里，切走切回都不丢
+    // 打开 / 切到某一格（文件行的「编辑」菜单 / dspview 的「✎ 编辑」按钮 / 新建后 / 点标签）。
+    // 没开过就压进标签栏；草稿在 drafts 里，切走切回两边改动各自留着。
     function selectChart(id) {
         if (id === selected || !entryOf(id)) return;
         const clean = !archiveDirty();   // 必须先取：改 openedTabs 本身就会让 DOC 与基线不等
+        if (!openTabs.includes(id)) openTabs.push(id);
         selected = id;
-        viewOf().openedTabs = id === SCRATCH_ID ? [] : [id];   // 自由草稿不进存档的标签
+        savePanels();
         bindDraft();
         syncEditorInputs();
         labSync(true);
@@ -1822,13 +2278,31 @@
     // 视图状态（暂停 / 快照 / 开着的标签）就在 DOC 里，这类改动本身也算"未落盘"。
     // 成品侧此刻没有别的待落盘改动时顺手写盘；有的话留着 —— 不能替用户把待保存的删格/调参一起交了。
     function viewAutoSave(clean) { if (clean) saveDoc(false); }
-    // 关闭当前编辑 = 关掉这个"标签"。有未保存先问，语义照搬 VSCode 关标签：保存 / 丢弃 / 取消
-    async function closeEditor() {
-        if (!selected) return;
-        if (!draftDirty(selected)) { commitClose(); return; }
+    // 各面板的标签状态进存档：内容面板照抄，右栏剔除自由草稿（它不是文档条目）。
+    // 活跃项也一起记：重开时回到上次看到的那一条。
+    function savePanels() {
+        const v = viewOf();
+        if (!v.panels) v.panels = emptyPanels();
+        v.panels.center = { tabs: center.tabs.slice(), active: center.active };
+        v.panels.right = {
+            tabs: openTabs.filter((x) => x !== SCRATCH_ID),
+            active: openTabs.indexOf(selected) >= 0 ? selected : '',
+        };
+    }
+    // 条目在磁盘上没了（文件为准的合并 / 删除）→ 连带它的标签一起摘；摘到的正是活跃那个就顺位到第一个
+    function pruneTabs() {
+        openTabs = openTabs.filter((id) => !!entryOf(id));
+        if (!entryOf(selected)) selected = openTabs[0] || '';
+        savePanels();
+    }
+    // 关标签（VSCode 那套）：干净的直接关；脏的先问 保存 / 丢弃 / 取消。
+    // 关掉的是活跃标签 → 激活它右边那个，右边没有就退到左边；都不剩就回空态。
+    async function closeTab(id) {
+        if (id !== selected && !openTabs.includes(id)) return;
+        if (!entryOf(id) || !draftDirty(id)) { dropTab(id); return; }
         const pick = await ask({
-            title: `${ordOf(selected)} 未保存`,
-            body: `「${DRAFT.title}」还有没保存的改动。\n保存 = 写回并落盘（自由探索会另存为一条「我的图」）；丢弃 = 只丢掉这份草稿。`
+            title: `${ordOf(id)} 未保存`,
+            body: `「${tabTitle(id)}」还有没保存的改动。\n保存 = 写回并落盘（自由探索会另存为一条「我的图」）；丢弃 = 只丢掉这份草稿。`
                 + (archiveDirty() ? '\n另外还有改动没落盘（参数调整 / 增删图），保存会一并写盘。' : ''),
             buttons: [
                 { text: '保存并关闭', cls: 'primary', value: 'save' },
@@ -1836,18 +2310,24 @@
                 { text: '取消', value: '' },
             ],
         });
-        if (pick === 'save') { await saveDoc(); commitClose(); }
-        else if (pick === 'drop') { drafts.delete(selected); commitClose(); }
+        if (pick === 'save') { await saveDoc(); dropTab(id); }
+        else if (pick === 'drop') { drafts.delete(id); dropTab(id); }
     }
-    function commitClose() {
+    // 从标签栏摘掉（不再问）。删除条目 / 保存时自由草稿让位也走这条
+    function dropTab(id) {
+        const i = openTabs.indexOf(id);
+        if (i < 0) return;
         const clean = !archiveDirty();
-        selected = '';
-        viewOf().openedTabs = [];        // 关掉了，存档里也不留
-        bindDraft();                 // → null，右栏回到空态
+        openTabs.splice(i, 1);
+        if (selected === id) selected = openTabs[i] || openTabs[i - 1] || '';
+        savePanels();
+        bindDraft();                 // → 顺位那条的草稿，或 null（右栏回到空态）
         syncEditorInputs();
         labSync(true);
         viewAutoSave(clean);
     }
+    // 右上 ✕ = 关掉当前活跃标签
+    async function closeEditor() { if (selected) await closeTab(selected); }
     // 提交：把待写回的草稿深拷贝回各自 DOC 条目，再整份存到服务端。
     // 自由探索草稿先另存为一条「我的图」（会建文件并跳到它）。存盘失败不吞：lastSaved 保持旧值 → 状态位继续报"未落盘"。
     async function saveDoc(commitDrafts) {
@@ -1856,6 +2336,8 @@
             if (drafts.has(SCRATCH_ID)) {           // 自由探索 → 另存为一条「我的图」
                 const r = drafts.get(SCRATCH_ID);
                 drafts.delete(SCRATCH_ID);
+                const si = openTabs.indexOf(SCRATCH_ID);   // 这份草稿变成新条目了，自由标签让位（addUserChart 会把新条目开成标签）
+                if (si >= 0) openTabs.splice(si, 1);
                 addUserChart({ title: r.d.title, desc: r.d.desc, stages: r.d.stages.map(cloneStage) });
             }
             for (const [id, r] of drafts) {
@@ -1959,8 +2441,9 @@
         drafts.delete(id);
         const fi = FILES.findIndex((it) => stemOf(it.file) === id);
         if (fi >= 0) FILES.splice(fi, 1);
-        if (id === selected) commitClose();   // 删的就是正在编辑的那条 → 右栏直接空态
-        if (OPEN.file === DIR_DSP + id + '.json') open({ file: DIR_DSP });   // 正开着它 → 退回列表
+        dropTab(id);                          // 删的那条若开着 → 标签一起摘（活跃的顺位到邻位，不剩就回空态）
+        if (center.panes.has(DIR_DSP + id + '.json')) centerClose(DIR_DSP + id + '.json');   // 正开着它 → 连标签一起关
+        if (!center.tabs.length) open({ file: DIR_DSP });                                    // 关空了 → 落回「我的图」目录
         postDsp('/api/dsps/' + encodeURIComponent(id + '.json'), 'DELETE');
         buildTree();
         syncEditorInputs(); labSync(true); refreshDirty();
@@ -2260,7 +2743,7 @@
         }
         await loadTree();          // content/ 的目录树 + .json 清单（树 / 模板 / 我的图一次拉回）
         mergeDspsIntoDoc();        // 文件为准 → 并进 DOC（右栏编辑器照旧按 id 找得到）
-        renderCenter();            // 默认落在 Templates 目录列表（顺带把面包屑画出来）
+        renderCenter();            // 挂上内容面板当前活跃的那条标签（没存档时就是 Templates 目录列表）
         refreshDirty();
     })();
     // 调试入口：控制台里 open({ file: 'content/Templates/inv+zscore.json' }) 可直接切视图
