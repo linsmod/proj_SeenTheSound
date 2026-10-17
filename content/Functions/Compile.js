@@ -30,6 +30,9 @@ function registerFunction(mod) {
   const id = mod.id || mod.name;
   if (!id) throw new Error('registerFunction: 模块缺少 id');
   mod.id = id;
+  // 来源归属：all.js 合并时在每个文件前设 DSP_SRC_FILE（func_bundle 注入）。
+  // 元数据视图 / 树的"算子挂在哪个 .js 下"靠它；单独载入某文件时退回模块自带声明或空串。
+  mod.srcFile = mod.srcFile || (typeof DSP_SRC_FILE !== 'undefined' ? DSP_SRC_FILE : '') || '';
   const old = FUNCTION_MAP[id];
   if (old && old !== mod) {
     // 覆盖注册是允许的（热替换），但要说一声，否则同名不同实现会很难查

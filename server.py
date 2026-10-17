@@ -593,11 +593,14 @@ def func_bundle():
                        and n not in ("Processor.js", "Compile.js"))
     except FileNotFoundError:
         names = []
-    parts = ["// 自动合并生成（server.py func_bundle）：" + ", ".join(names)]
+    parts = ["// 自动合并生成（server.py func_bundle）：" + ", ".join(names),
+             "globalThis.DSP_SRC_FILE='';"]
     for n in names:
         try:
             with open(os.path.join(FUNC_DIR, n), "r", encoding="utf-8") as f:
-                parts.append(f"// ==== {n} ====\n" + f.read().strip())
+                # 每个文件前设一次 DSP_SRC_FILE：registerFunction 把它记进模块元数据，
+                # 前端的元数据视图/虚拟树靠它把"算子 → 它住在哪个 .js"对上号
+                parts.append(f"// ==== {n} ====\nglobalThis.DSP_SRC_FILE='{n}';\n" + f.read().strip())
         except OSError:
             continue
     resp = Response("\n\n".join(parts), mimetype="text/javascript")
@@ -900,6 +903,12 @@ def _content_tree(dirpath, prefix):
             dirs.append(nd)
         elif n.startswith("$"):
             continue                       # $ 开头 = 元数据（$schema / $treeNode），不是内容条目
+        elif n.endswith(".js") and dirpath == FUNC_DIR:
+            # Functions 的源码也是实体文件 → 进树（kind=src）。元数据视图挂在它下面展开
+            # （前端 mergedTree 会把注册表里 srcFile 归属此文件的算子当虚拟子节点）。
+            # _ 开头是自测件、Processor/Compile 是运行时核心，都不是算子模块，不进树。
+            if not n.startswith("_") and n not in ("Processor.js", "Compile.js"):
+                files.append({"kind": "src", "name": n, "path": prefix + n})
         elif n.endswith(ITEM_EXTS):
             item = _dir_item(dirpath, prefix, n)
             if not item:
@@ -915,7 +924,11 @@ def _content_tree(dirpath, prefix):
 
 
 def _flatten_files(nodes, out):
-    """把树里的文件节点摊平成条目（前端 itemOf / itemsOf 用的索引）：字段按类型带过去。"""
+    """把树里的文件节点摊平成条目（前端 itemOf / itemsOf 用的索引）：字段按类型带过去。
+
+    只递归目录；src（算子源码）叶子不进索引 —— 它们不是内容条目，没有 title/stages，
+    前端的虚拟树自己从注册表现查归属（mergedTree 按 srcFile 挂算子叶子）。
+    """
     for nd in nodes:
         if nd["kind"] == "file":
             entry = {"file": nd["path"], "name": nd["name"].rsplit(".", 1)[0],
@@ -925,7 +938,7 @@ def _flatten_files(nodes, out):
             else:
                 entry["stages"] = nd["stages"]
             out.append(entry)
-        else:
+        elif "children" in nd:
             _flatten_files(nd["children"], out)
     return out
 

@@ -185,6 +185,11 @@
     /* 标签条末尾的分屏按钮：只在单组时出现 */
     .paneadd { flex: none; align-self: center; width: 20px; height: 18px; margin-left: 2px; padding: 0; background: transparent; border: 1px solid rgba(255,255,255,0.10); border-radius: 5px; color: #6d7fa6; font-size: 12px; line-height: 1; cursor: pointer; }
     .paneadd:hover { background: #263a60; color: #cbeeff; border-color: rgba(74,224,255,0.45); }
+    /* 算子源码文件（实体，可展开元数据）与虚拟算子叶子 */
+    .tnode.src { color: #8fa2c8; }
+    .tnode.src .to { font-size: 11px; }
+    .tnode.op { color: #a9bcdc; }
+    .tnode.op .to { color: #6ea8d8; font-size: 12px; }
     /* 输入源选择器：顶栏里一个小 select，宽度跟当前选项走 */
     .isrc { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #8fa2c8; }
     .isrc select { background: #0e1630; color: #cbeeff; border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; font-size: 12px; padding: 2px 4px; max-width: 170px; }
@@ -388,6 +393,11 @@
             params: (mod.paramSchema || []).map((s) => UIControls.normalizeParam(s)),
             category: mod.category || '其他',
             description: mod.description || '',
+            // 元数据视图（fnview）要看的：来源文件 / io 契约 / 私有工作区声明 / 多输出端口
+            srcFile: mod.srcFile || '',
+            io: mod.io || null,
+            state: Array.isArray(mod.state) ? mod.state : [],
+            ports: Object.keys(mod.copyOutSchema || {}),
         };
     }
 
@@ -441,6 +451,10 @@
     const CONTENT_ROOT = 'content/';     // 内容根（= ROOT）：显示路径时省略这段前缀，content 本身不写出来
     const FILE_KEY_RE = /^content\/(?:[^/]+\/)*[^/]+\.(?:json|cmpv)$/;
     const DIR_KEY_RE = /^content\/(?:[^/]+\/)*$/;
+    // 算子源码文件（实体）与其下的虚拟算子叶子：key 形如 content/Functions/Lowpass.js#lowpass
+    const FN_DIR = 'content/Functions/';
+    const isFnKey = (k) => typeof k === 'string' && k.startsWith(FN_DIR) && k.indexOf('#') > 0;
+    const fnIdOf = (k) => k.slice(k.indexOf('#') + 1);
     function isFileKey(k) { return typeof k === 'string' && FILE_KEY_RE.test(k); }
     function dirOf(file) { const i = file.lastIndexOf('/'); return i < 0 ? '' : file.slice(0, i + 1); }
     function stemOf(file) { const i = file.lastIndexOf('/'); const n = i < 0 ? file : file.slice(i + 1); return n.replace(/\.[^./]+$/, ''); }
@@ -467,7 +481,9 @@
         // 展开的目录：只认 content/ 下以 / 结尾的路径（目录来自磁盘，形态即可判定）
         // 老存档里的 collapsed（语义相反）直接忽略 —— 读不到 expanded 就是默认全收起
         if (Array.isArray(raw.expanded)) {
-            v.expanded = raw.expanded.filter((d) => typeof d === 'string' && DIR_KEY_RE.test(d) && d !== 'content/');
+            // 目录 + 算子源码文件的展开态（实体 .js 节点下面挂的是虚拟算子叶子）
+            v.expanded = raw.expanded.filter((d) => typeof d === 'string'
+                && ((DIR_KEY_RE.test(d) && d !== 'content/') || (d.startsWith(FN_DIR) && d.endsWith('.js'))));
         }
         // 链输入源：只认注册表里有的（INPUT_SRC 在下方定义，调用发生在脚本求值后，没问题）
         if (typeof raw.input === 'string' && INPUT_SRC[raw.input]) v.input = raw.input;
@@ -481,7 +497,7 @@
             }
             return out.slice(0, 24);
         };
-        const pathOk = (k) => typeof k === 'string' && (isFileKey(k) || (DIR_KEY_RE.test(k) && k !== CONTENT_ROOT));
+        const pathOk = (k) => typeof k === 'string' && (isFileKey(k) || isFnKey(k) || (DIR_KEY_RE.test(k) && k !== CONTENT_ROOT));
         const idOk = (k) => typeof k === 'string' && set.has(k);
         const pIn = (raw.panels && typeof raw.panels === 'object') ? raw.panels : null;
         const cIn = (pIn && pIn.center && typeof pIn.center === 'object') ? pIn.center : null;
@@ -1199,7 +1215,9 @@
         // 活跃那个立刻按新数据重挂，其余等被点开时再重挂（见 centerInvalidate）。
         centerInvalidate();
     }
-    // 目录骨架（TREE）× 文件清单（FILES）→ 渲染用的树：目录在前，文件按名排在各目录末尾
+    // 目录骨架（TREE）× 文件清单（FILES）→ 渲染用的树：目录在前，文件按名排在各目录末尾。
+    // content/Functions/*.js（kind=src，服务端树里带来）也是实体节点 —— 它下面挂的算子叶子是
+    // **虚拟信息**：从 OPS 注册表按 srcFile 归属现查，磁盘上并不存在那些子节点。
     function mergedTree() {
         const byDir = new Map();
         for (const it of FILES) {
@@ -1211,10 +1229,21 @@
                 ...(Array.isArray(it.targets) ? { targets: it.targets } : { stages: it.stages }),
             });
         }
+        // base 必须用 nd.path（content/Functions/X.js）—— nd.name 只是文件名，
+        // 拼出来的 '#'-key 过不了 isFnKey（要以 content/ 开头），会掉进 dspview 拿去当内容文件取
+        const srcOps = (name, base) => {
+            const out = [];
+            for (const id of Object.keys(OPS)) {
+                if (OPS[id].srcFile !== name) continue;
+                out.push({ kind: 'op', id, path: base + '#' + id, label: OPS[id].label || id });
+            }
+            return out.sort((a, b) => a.id.localeCompare(b.id));
+        };
         const build = (nodes, prefix) => {
             const out = [];
             for (const nd of nodes) {
                 if (nd.kind === 'dir') out.push({ ...nd, children: build(nd.children || [], nd.path) });
+                else if (nd.kind === 'src') out.push({ kind: 'src', name: nd.name, path: nd.path, ops: srcOps(nd.name, nd.path) });
             }
             const files = (byDir.get(prefix) || []).sort((a, b) => a.path.localeCompare(b.path));
             return out.concat(files);
@@ -1231,7 +1260,7 @@
     // 每条标签 = 一个 pane：自己一块 DOM、自己一批画布、自己一个"在途渲染"代号（token）。
     // 非活跃的 pane 留在 DOM 里但 hidden —— 内容与滚动位置都不丢，画布也一起挂 hidden（主循环跳过，不空算）。
     const HOME_DIR = DIR_TPL;                // 默认落地：出厂预设目录（content/Templates/）
-    const VIEWS = ['dsplistview', 'dspview']; // 白名单：view 名不认识就按 file 形态重推
+    const VIEWS = ['dsplistview', 'dspview', 'fnview']; // 白名单：view 名不认识就按 file 形态重推
     const LIST_C_H = 76, ONE_C_H = 200;      // 列表卡片预览 / 单文件大图各自的画布高
     const treeSel = new Set();               // 树里选中的路径集合（Shift/Ctrl 多选，纯 UI 状态、不进存档）
     let treeAnchor = '';                     // 范围选择的锚点（最近一次普通 / Ctrl 点击的那一行）
@@ -1271,6 +1300,7 @@
     center.groups.push(newGroup([HOME_DIR]));
     // 空 file = 回默认落地目录（Templates 列表）；以 / 结尾 = 目录列表；.cmpv = 对比视图（同样用卡片列表）；否则 = 单文件链路视图
     function viewerOf(file) {
+        if (isFnKey(file)) return 'fnview';      // 算子元数据视图（虚拟叶子，挂在实体 .js 文件下）
         if (!file || file.endsWith('/') || isCmpvFile(file)) return 'dsplistview';
         return 'dspview';
     }
@@ -1280,6 +1310,10 @@
     function itemOf(file) { return FILES.find((t) => t.file === file) || null; }
     // 标签标题：目录取末段，文件优先用磁盘条目里的标题，取不到退回文件名（stem）
     function docTitle(key) {
+        if (isFnKey(key)) {
+            const op = OPS[fnIdOf(key)];
+            return op ? `${op.label || fnIdOf(key)}（算子）` : fnIdOf(key);
+        }
         if (key.endsWith('/')) {
             const m = DIR_META.get(key);              // 目录标题与树上一致：描述符给了 text 就听它的
             if (m && m.text) return m.text;
@@ -1619,8 +1653,87 @@
             isDirty: () => false,
             confirmClose: () => true,
         },
+        fnview: {
+            // 算子元数据视图：key = content/Functions/X.js#opId，虚拟叶子挂在实体源码文件下
+            mount: (p) => renderFnView(p),
+            isDirty: () => false,
+            confirmClose: () => true,
+        },
     };
     function viewImplOf(name) { return VIEW_IMPL[name] || VIEW_IMPL.dsplistview; }
+    // ---------- 算子元数据视图（fnview）----------
+    // 回答"这一级是什么、吃什么吐什么、占什么"：参数 schema、私有工作区（state 声明）、
+    // 多输出端口、兼容性（needsFs）。数据全部来自 OPS 注册表 —— 算子自己声明，这里只负责摆出来。
+    function renderFnView(p) {
+        const id = fnIdOf(p.key);
+        const op = OPS[id];
+        const host = p.el;
+        host.textContent = '';
+        const head = document.createElement('div');
+        head.className = 'st';
+        head.textContent = op ? `${op.label || id} · ${id}` : `${id}（未注册：模块没载入或已改名）`;
+        host.appendChild(head);
+        if (!op) return;
+        const tags = document.createElement('div');
+        tags.className = 'vtools';
+        const chip = (t) => { const s = document.createElement('span'); s.className = 'st'; s.textContent = t; tags.appendChild(s); };
+        chip('kind: ' + op.kind);
+        if (op.io) chip(`io: ${op.io.in} → ${op.io.out}`);
+        chip('category: ' + op.category);
+        if (op.srcFile) chip('source: ' + FN_DIR + op.srcFile);
+        if (op.needsFs) chip('needsFs：跨帧状态，旧批算路径不可比');
+        host.appendChild(tags);
+        if (op.description) {
+            const d = document.createElement('div');
+            d.className = 'tpl-empty';
+            d.textContent = op.description;
+            host.appendChild(d);
+        }
+        const mkTable = (heads) => {
+            const t = document.createElement('table');
+            t.className = 'src-tbl';
+            const h = t.insertRow();
+            for (const x of heads) { const th = document.createElement('th'); th.textContent = x; h.appendChild(th); }
+            return t;
+        };
+        if (op.params && op.params.length) {
+            const t = mkTable(['参数', '控件', '默认', '范围']);
+            for (const sp of op.params) {
+                const tr = t.insertRow();
+                const put = (x, mono) => { const c = tr.insertCell(); if (mono) c.className = 'mono'; c.textContent = x; };
+                put(sp.label);
+                put(sp.type + (sp.widget && sp.widget !== 'NumberBox' && sp.widget !== 'select' ? ` (${sp.widget})` : ''), true);
+                put(JSON.stringify(sp.def));
+                put(sp.type === 'select'
+                    ? ((sp.options || []).map((o) => o.v).join(' | ') || '（选项由宿主动态提供）')
+                    : [sp.min, sp.max].filter((x) => x != null).join(' ~ ') + (sp.step != null ? ` 步进${sp.step}` : ''));
+            }
+            host.appendChild(t);
+        }
+        // 私有工作区：算子 state 声明 + 多输出端口。没有声明且无端口 = 纯函数，明说。
+        const st = (op.state || []);
+        if (st.length || op.ports.length) {
+            const t = mkTable(['私有资源', '形态', '说明']);
+            for (const s of st) {
+                const tr = t.insertRow();
+                const c1 = tr.insertCell(); c1.className = 'mono'; c1.textContent = 'ST ' + s.key;
+                tr.insertCell().textContent = s.shape || '';
+                tr.insertCell().textContent = s.note || '';
+            }
+            for (const name of op.ports) {
+                const tr = t.insertRow();
+                const c1 = tr.insertCell(); c1.className = 'mono'; c1.textContent = 'port ' + name;
+                tr.insertCell().textContent = 'copyOutSchema';
+                tr.insertCell().textContent = '多输出端口：wired 接线后供下游 tap';
+            }
+            host.appendChild(t);
+        } else if (!op.needsFs) {
+            const d = document.createElement('div');
+            d.className = 'tpl-empty';
+            d.textContent = '纯函数：输出只取决于当前输入，无跨帧状态。';
+            host.appendChild(d);
+        }
+    }
     // 挂载 / 重挂：从 pane.key + pane.view 把 DOM 与画布整块重建
     function paneMount(p) {
         paneDetach(p);
@@ -1754,7 +1867,7 @@
     function pruneCenter() {
         if (!FILES.length) return;
         // 目录标签也要看它还有没有 $treeNode.json：描述符被删掉 = 它退回纯文件夹，标签一并摘掉
-        const keep = (k) => (k.endsWith('/') ? dirOpenable(k) : !!itemOf(k));
+        const keep = (k) => (k.endsWith('/') ? dirOpenable(k) : (isFnKey(k) ? !!OPS[fnIdOf(k)] : !!itemOf(k)));
         let changed = false;
         for (const g of center.groups) {
             const left = g.tabs.filter(keep);
@@ -2383,11 +2496,13 @@
         const row = document.createElement('div');
         row.className = 'tnode ' + cls;
         const isDir = cls === 'dir';
-        const canExpand = isDir && expandable !== false;   // 空目录没有内容可展开 → 不给三角、不绑双击
-        // 目录能不能被"打开"取决于它有没有 $treeNode.json；没有就只是个文件夹（只能展开 / 收起）
-        const canOpen = !isDir || dirOpenable(file);
-        if (isDir && !canOpen) row.classList.add('noview');
-        if (isDir) {
+        const isSrc = cls === 'src';                       // 算子源码文件：实体节点，可展开虚拟算子叶子
+        const canExpand = (isDir || isSrc) && expandable !== false;   // 空目录 / 没注册算子的文件 → 不给三角
+        // 目录能不能被"打开"取决于它有没有 $treeNode.json；没有就只是个文件夹（只能展开 / 收起）。
+        // src 文件本身不打开（它没有视图）—— 单击只选中，双击展开元数据。
+        const canOpen = isSrc ? false : (!isDir || dirOpenable(file));
+        if ((isDir || isSrc) && !canOpen) row.classList.add('noview');
+        if (isDir || isSrc) {
             if (canExpand) {
                 const caret = document.createElement('span');
                 caret.className = 'caret';
@@ -2412,15 +2527,19 @@
         }
         const to = document.createElement('span');
         to.className = 'to';
-        to.textContent = isDir ? '📁' : (isCmpvFile(file) ? '⇄' : '📄');   // ⇄ = 对比视图
+        to.textContent = isDir ? '📁' : (isSrc ? '📜' : (cls === 'op' ? 'ƒ' : (isCmpvFile(file) ? '⇄' : '📄')));   // ⇄ = 对比视图
         const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = label;
         row.append(to, tn);
         row.tabIndex = 0;
-        row.title = isDir
-            ? (canOpen
-                ? file + (canExpand ? '\n单击：打开这个目录的列表视图；双击（每两下切一次，或点三角）：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
-                : file + '\n文件夹（没有 $treeNode.json）：双击（或点三角）= 展开 / 收起，不进内容面板')
-            : file + '\n单击：打开这一条的链路视图；Shift 单击 = 范围选择，Ctrl 单击 = 加选';
+        row.title = isSrc
+            ? file + '\n算子源码（实体文件）。双击（或点三角）= 展开它注册的算子；单击算子叶子 = 看元数据'
+            : (cls === 'op'
+                ? (() => { const o = OPS[fnIdOf(file)]; return (o ? `${o.label}（${fnIdOf(file)}）\n${o.description || ''}\n` : '') + '单击：打开算子元数据视图'; })()
+                : (isDir
+                    ? (canOpen
+                        ? file + (canExpand ? '\n单击：打开这个目录的列表视图；双击（每两下切一次，或点三角）：展开 / 收起\nShift 单击 = 范围选择，Ctrl 单击 = 加选' : '\n打开这个目录的列表视图（空目录）')
+                        : file + '\n文件夹（没有 $treeNode.json）：双击（或点三角）= 展开 / 收起，不进内容面板')
+                    : file + '\n单击：打开这一条的链路视图；Shift 单击 = 范围选择，Ctrl 单击 = 加选'));
         // 单击 = 选中 + 打开（能打开才开）；双击 = 展开 / 收起；三角 = 展开 / 收起。
         // 两者共存靠的是**分工**，不是定时器：单击永不改展开状态，双击永不改内容面板。
         // 于是双击的两次 click 里第二击被 detail 挡掉、第一击只做"打开"，不会和 dblclick 的"切换"互相抵消。
@@ -2444,9 +2563,13 @@
             setTreeSel([file]);
             treeAnchor = file;
             const d = ev.detail || 1;
-            if (isDir && canExpand && d % 2 === 0) {       // 偶数 = 这一对的第二击 = 一次双击
+            if (canExpand && d % 2 === 0) {       // 偶数 = 这一对的第二击 = 一次双击
                 tlog('row.click', ev, `切换展开（${isDirExpanded(file) ? '展开→收起' : '收起→展开'}）`);
                 toggleDirExpanded(file);
+                return;
+            }
+            if (isSrc) {                                   // 源码文件没有视图：单击只选中，元数据在展开里
+                tlog('row.click', ev, '选中（源码文件不打开，双击展开算子清单）');
                 return;
             }
             tlog('row.click', ev, isDir ? (canOpen ? '选中 + 打开目录' : '选中（目录不可打开，open 会跳过）') : '选中 + 打开文件');
@@ -2458,7 +2581,10 @@
             if (!canOpen) { if (canExpand) toggleDirExpanded(file); return; }
             open({ file });
         });
-        row.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openFileMenu(row, file); });
+        row.addEventListener('contextmenu', (ev) => {
+            if (isSrc || cls === 'op') return;     // 源码文件 / 虚拟算子叶子：不是内容条目，没有菜单
+            ev.preventDefault(); openFileMenu(row, file);
+        });
         treeFileNodes.set(file, { row, tn });
         return row;
     }
@@ -2469,6 +2595,24 @@
         if (nd.kind === 'file') {
             // 树里一律显示文件名（不带 title）：标题是内容属性，改名不该让树行跟着变
             return treeFileRow(nd.path, nd.name, 'file' + (isDspFile(nd.path) ? '' : ' tpl'));
+        }
+        if (nd.kind === 'src') {
+            // 算子源码文件（实体）：可展开，下面是虚拟算子叶子
+            const box = document.createElement('div');
+            box.className = 'grp';
+            const ops = nd.ops || [];
+            box.appendChild(treeFileRow(nd.path, nd.name, 'src', box, ops.length > 0));
+            if (ops.length) {
+                const kids = document.createElement('div');
+                kids.className = 'kids';
+                for (const o of ops) kids.appendChild(buildTreeNode(o));
+                box.appendChild(kids);
+            }
+            return box;
+        }
+        if (nd.kind === 'op') {
+            // 虚拟算子叶子：单击 = 打开元数据视图（不进磁盘，没有右键菜单）
+            return treeFileRow(nd.path, nd.label, 'op');
         }
         const box = document.createElement('div');
         box.className = 'grp';
@@ -3533,7 +3677,7 @@
     }
 
     // 每次改自检就 bump 一下：控制台第一行会打出来，一眼分清"新构建"还是"缓存的旧页面"
-    const ST_BUILD = 'r7';
+    const ST_BUILD = 'r8';
     window.dspSelfTest = function (opts) {
         const quiet = !!(opts && opts.quiet);
         const withTpl = !(opts && opts.templates === false);

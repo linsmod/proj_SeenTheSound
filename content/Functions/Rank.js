@@ -29,7 +29,7 @@ registerFunction({
   io: { in: 'vec12', out: 'vec12' },     // 整条一起看；想放宽到任意长度就写 'num[]'
 
   label: '分位秩',
-  description: '按当前帧把 12 个值换成 0~1 的平均秩（并列取平均），只保留排序、丢掉幅度',
+  description: '按当前帧把输入向量换成 0~1 的平均秩（并列取平均），只保留排序、丢掉幅度；对任意长度成立',
   category: '归一化',
   tags: 'rank 分位 秩 percentile 排序',
 
@@ -61,4 +61,9 @@ registerFunction({
   },
 
   paramSchema: [],                        // 无参数
+
+  // 私有工作区声明（元数据视图用）：② 的快照缓冲
+  state: [
+    { key: '/tmp', shape: 'Float64Array(n)', note: '比较用快照；长度与输入一致，变了就重开' },
+  ],
 });

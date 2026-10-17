@@ -26,6 +26,12 @@ registerFunction({
       control: { type: 'NumberBox', fractionDigits: 2, step: 0.05, min: 0.02, max: 2 } },
   ],
 
+  // 私有工作区声明（元数据视图用）：ST 的 key 相对 fs.FN_KEY，这里把"占什么"亮出来。
+  // 纯声明，运行期不读 —— f 里的 ST() 调用才是事实，这里只是让人看得见。
+  state: [
+    { key: '/lp', shape: '{ y: vec12|null, t: number|null }', note: '一阶 IIR：上一帧输出 + 上一帧时间戳；序列长度变了就重建' },
+  ],
+
   f: (a, p, fs) => {
     // 跨帧状态：ST 记录 { y: 上一帧输出, t: 上一帧 TS }。长度变了重建 = 从当前输入重新起步。
     const rec = ST(fs, fs.FN_KEY + '/lp', { y: null, t: null }).value;

@@ -184,7 +184,15 @@
       "content/Recents/",
       "content/ViewState/",
       "content/Templates/",
-      "content/My dsps/"
+      "content/Functions/Id.js",
+      "content/Functions/Input.js",
+      "content/Functions/Inv.js",
+      "content/Functions/Log.js",
+      "content/Functions/Log01.js",
+      "content/Functions/Lowpass.js",
+      "content/Functions/",
+      "content/Functions/Pow.js",
+      "content/Functions/Rank.js"
     ],
     "panels": {
       "center": {
@@ -196,9 +204,15 @@
               "content/My dsps/",
               "content/My dsps/u1.json",
               "content/Templates/",
-              "content/My dsps/InputSwitch.json"
+              "content/My dsps/InputSwitch.json",
+              "content/Functions/Id.js#id",
+              "content/Functions/Input.js#input",
+              "content/Functions/Inv.js#inv",
+              "content/Functions/Lowpass.js#lowpass",
+              "content/Functions/Pow.js#pow",
+              "content/Functions/Rank.js#rank"
             ],
-            "active": "content/My dsps/InputSwitch.json",
+            "active": "content/Functions/Rank.js#rank",
             "size": 1
           }
         ],
